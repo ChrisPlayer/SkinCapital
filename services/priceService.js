@@ -2,49 +2,27 @@ const axios = require('axios');
 const PQueue = require('p-queue').default;
 const db = require('../config/database');
 
-// Rate limiting queues with conservative settings
+// Rate limiting queue: conservative 3.5s interval for Steam Market
 const steamQueue = new PQueue({ concurrency: 1, interval: 3500, intervalCap: 1 });
 
-// Cache for Skinport prices (full list, refreshed once per session)
-let skinportCache = null;
-let skinportCacheTime = 0;
-const SKINPORT_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
-
-// USD to EUR conversion rate
-const USD_TO_EUR = parseFloat(process.env.USD_TO_EUR_RATE) || 0.92;
-
 /**
- * Get prices from multiple sources for an item
+ * Get Steam Market price for an item
  * @param {string} marketHashName - Item market hash name
- * @returns {Promise<Object>} Prices from all sources
+ * @returns {Promise<Object>} Price info
  */
 async function getPrices(marketHashName) {
     const prices = {
         steam: null,
-        skinport: null,
         average: null
     };
 
-    // Fetch Steam price (primary source)
     const steamPrice = await getSteamMarketPrice(marketHashName);
     prices.steam = steamPrice;
-
-    // Try Skinport from cache
-    const skinportPrice = await getSkinportPrice(marketHashName);
-    prices.skinport = skinportPrice;
-
-    // Calculate average from available prices
-    const validPrices = [steamPrice, skinportPrice].filter(p => p !== null);
-    if (validPrices.length > 0) {
-        prices.average = validPrices.reduce((a, b) => a + b, 0) / validPrices.length;
-    }
+    prices.average = steamPrice;
 
     // Save to database
     if (steamPrice !== null) {
         db.insertPrice(marketHashName, 'steam', steamPrice);
-    }
-    if (skinportPrice !== null) {
-        db.insertPrice(marketHashName, 'skinport', skinportPrice);
     }
 
     return prices;
@@ -52,8 +30,6 @@ async function getPrices(marketHashName) {
 
 /**
  * Get Steam Market price
- * @param {string} marketHashName 
- * @returns {Promise<number|null>} Price in EUR or null
  */
 async function getSteamMarketPrice(marketHashName) {
     return steamQueue.add(async () => {
@@ -69,8 +45,7 @@ async function getSteamMarketPrice(marketHashName) {
             });
 
             if (response.data && response.data.success && response.data.lowest_price) {
-                const priceStr = response.data.lowest_price;
-                const price = parseSteamPrice(priceStr);
+                const price = parseSteamPrice(response.data.lowest_price);
                 console.log(`[Price] Steam: ${marketHashName} = €${price.toFixed(2)}`);
                 return price;
             }
@@ -82,7 +57,6 @@ async function getSteamMarketPrice(marketHashName) {
                 await sleep(60000);
                 return null;
             }
-            // Don't spam logs for items without market listings
             if (err.response?.status !== 500) {
                 console.error(`[Price] Steam error for ${marketHashName}:`, err.message);
             }
@@ -93,8 +67,6 @@ async function getSteamMarketPrice(marketHashName) {
 
 /**
  * Parse Steam price string to number
- * @param {string} priceStr - Price string like "1,23€" or "$1.23"
- * @returns {number} Price as float
  */
 function parseSteamPrice(priceStr) {
     let cleaned = priceStr
@@ -102,11 +74,9 @@ function parseSteamPrice(priceStr) {
         .replace(/\s/g, '')
         .trim();
 
-    // Handle European format (1.234,56) vs US format (1,234.56)
     if (cleaned.includes(',') && cleaned.includes('.')) {
         const lastComma = cleaned.lastIndexOf(',');
         const lastDot = cleaned.lastIndexOf('.');
-
         if (lastComma > lastDot) {
             cleaned = cleaned.replace(/\./g, '').replace(',', '.');
         } else {
@@ -125,90 +95,79 @@ function parseSteamPrice(priceStr) {
 }
 
 /**
- * Get Skinport price from cached full item list
- * @param {string} marketHashName 
- * @returns {Promise<number|null>} Price in EUR or null
- */
-async function getSkinportPrice(marketHashName) {
-    try {
-        // Fetch full Skinport list if not cached or expired
-        if (!skinportCache || Date.now() - skinportCacheTime > SKINPORT_CACHE_TTL) {
-            console.log('[Price] Refreshing Skinport price cache...');
-
-            const response = await axios.get('https://api.skinport.com/v1/items?app_id=730&currency=EUR', {
-                timeout: 30000,
-                headers: {
-                    'Accept': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                }
-            });
-
-            if (response.data && Array.isArray(response.data)) {
-                // Build cache map
-                skinportCache = new Map();
-                for (const item of response.data) {
-                    if (item.market_hash_name && item.min_price) {
-                        skinportCache.set(item.market_hash_name, item.min_price);
-                    }
-                }
-                skinportCacheTime = Date.now();
-                console.log(`[Price] Skinport cache updated: ${skinportCache.size} items`);
-            }
-        }
-
-        // Lookup from cache
-        if (skinportCache && skinportCache.has(marketHashName)) {
-            return skinportCache.get(marketHashName);
-        }
-
-        return null;
-    } catch (err) {
-        if (err.response?.status === 429) {
-            console.warn('[Price] Skinport rate limited, using cache');
-        } else {
-            console.error('[Price] Skinport error:', err.message);
-        }
-        return skinportCache?.get(marketHashName) || null;
-    }
-}
-
-/**
  * Get cached prices from database
- * @param {string} marketHashName 
- * @returns {Object} Cached prices
  */
 function getCachedPrices(marketHashName) {
     const prices = {
         steam: null,
-        skinport: null,
         average: null
     };
 
     const rows = db.all(`
         SELECT source, price_eur FROM prices 
         WHERE market_hash_name = ? 
-        AND timestamp > datetime('now', '-6 hours')
+        AND timestamp > datetime('now', '-12 hours')
         ORDER BY timestamp DESC
+        LIMIT 5
     `, [marketHashName]);
 
     for (const row of rows) {
-        if (prices[row.source] === null) {
-            prices[row.source] = row.price_eur;
+        if (row.source === 'steam' && prices.steam === null) {
+            prices.steam = row.price_eur;
         }
     }
 
-    const validPrices = [prices.steam, prices.skinport].filter(p => p !== null);
-    if (validPrices.length > 0) {
-        prices.average = validPrices.reduce((a, b) => a + b, 0) / validPrices.length;
-    }
-
+    prices.average = prices.steam;
     return prices;
 }
 
 /**
- * Sleep utility
- * @param {number} ms 
+ * Get the Steam image URL for an item
  */
+function getItemImageUrl(marketHashName) {
+    return `https://community.akamai.steamstatic.com/economy/image/class/730/${encodeURIComponent(marketHashName)}/300fx300f`;
+}
+
+/**
+ * Get item rarity based on name patterns
+ */
+function getItemRarity(marketHashName) {
+    const name = marketHashName.toLowerCase();
+
+    if (name.includes('★') || name.startsWith('★')) {
+        if (name.includes('stattrak')) return { name: 'Extraordinary', color: '#FFD700', bg: 'rgba(255, 215, 0, 0.15)' };
+        return { name: 'Extraordinary', color: '#FFD700', bg: 'rgba(255, 215, 0, 0.15)' };
+    }
+    if (name.includes('covert') || name.includes('awp |') || name.includes('ak-47 |') || name.includes('m4a4 |') || name.includes('m4a1-s |')) {
+        // Common high-tier weapons - check by quality tags
+    }
+
+    // Rarity by exterior / special patterns
+    if (name.includes('stattrak')) return { name: 'StatTrak', color: '#CF6A32', bg: 'rgba(207, 106, 50, 0.15)' };
+    if (name.includes('souvenir')) return { name: 'Souvenir', color: '#FFD700', bg: 'rgba(255, 215, 0, 0.15)' };
+
+    // Pins, stickers, agents, etc
+    if (name.includes('pin')) return { name: 'Remarkable', color: '#4B69FF', bg: 'rgba(75, 105, 255, 0.15)' };
+    if (name.includes('sticker')) return { name: 'High Grade', color: '#4B69FF', bg: 'rgba(75, 105, 255, 0.15)' };
+    if (name.includes('music kit')) return { name: 'High Grade', color: '#4B69FF', bg: 'rgba(75, 105, 255, 0.15)' };
+    if (name.includes('agent')) return { name: 'Distinguished', color: '#8847FF', bg: 'rgba(136, 71, 255, 0.15)' };
+
+    // Default
+    return { name: 'Mil-Spec', color: '#4B69FF', bg: 'rgba(75, 105, 255, 0.15)' };
+}
+
+/**
+ * Get wear level from float value
+ */
+function getWearLevel(floatValue) {
+    if (floatValue === null || floatValue === undefined) return null;
+    if (floatValue < 0.07) return { name: 'Factory New', short: 'FN', color: '#4CAF50' };
+    if (floatValue < 0.15) return { name: 'Minimal Wear', short: 'MW', color: '#8BC34A' };
+    if (floatValue < 0.38) return { name: 'Field-Tested', short: 'FT', color: '#FFC107' };
+    if (floatValue < 0.45) return { name: 'Well-Worn', short: 'WW', color: '#FF9800' };
+    return { name: 'Battle-Scarred', short: 'BS', color: '#F44336' };
+}
+
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -216,6 +175,8 @@ function sleep(ms) {
 module.exports = {
     getPrices,
     getSteamMarketPrice,
-    getSkinportPrice,
-    getCachedPrices
+    getCachedPrices,
+    getItemImageUrl,
+    getItemRarity,
+    getWearLevel
 };

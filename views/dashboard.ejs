@@ -4,8 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="CS2 Inventory Tracker - Dashboard">
-    <title>CS2 Inventory Tracker - Dashboard</title>
+    <title>CS2 Inventory Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -13,52 +12,48 @@
             theme: {
                 extend: {
                     colors: {
-                        cs: {
-                            orange: '#DE9B35',
-                            purple: '#8847FF',
-                            pink: '#D32CE6',
-                            red: '#EB4B4B',
-                            blue: '#5E98D9',
-                            gray: '#1B2838',
-                            dark: '#0E1419'
-                        }
+                        cs: { orange: '#DE9B35', purple: '#8847FF', pink: '#D32CE6', red: '#EB4B4B', blue: '#5E98D9', gray: '#1B2838', dark: '#0E1419', surface: '#16202D' }
                     }
                 }
             }
         }
     </script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        * {
+            box-sizing: border-box;
+        }
 
         body {
             font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #0E1419 0%, #1B2838 50%, #0E1419 100%);
+            background: #0a0e14;
             min-height: 100vh;
         }
 
         ::-webkit-scrollbar {
-            width: 8px;
-            height: 8px;
+            width: 6px;
         }
 
         ::-webkit-scrollbar-track {
-            background: #1B2838;
+            background: transparent;
         }
 
         ::-webkit-scrollbar-thumb {
-            background: #3D4F5F;
-            border-radius: 4px;
+            background: #2a3a4e;
+            border-radius: 3px;
         }
 
-        ::-webkit-scrollbar-thumb:hover {
-            background: #5E98D9;
+        .glass {
+            background: rgba(22, 32, 45, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
         }
 
-        .glass-card {
-            background: rgba(27, 40, 56, 0.7);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
+        .glass-hover:hover {
+            border-color: rgba(222, 155, 53, 0.3);
+            box-shadow: 0 0 30px rgba(222, 155, 53, 0.05);
         }
 
         .gradient-text {
@@ -68,34 +63,81 @@
             background-clip: text;
         }
 
-        .pulse-animation {
-            animation: pulse 2s infinite;
+        .item-card {
+            transition: all 0.2s ease;
         }
 
-        @keyframes pulse {
+        .item-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+        }
 
-            0%,
+        .float-bar {
+            height: 4px;
+            border-radius: 2px;
+            background: linear-gradient(90deg, #4CAF50 0%, #8BC34A 15%, #FFC107 38%, #FF9800 45%, #F44336 100%);
+            position: relative;
+        }
+
+        .float-marker {
+            position: absolute;
+            top: -3px;
+            width: 3px;
+            height: 10px;
+            background: white;
+            border-radius: 1px;
+            transform: translateX(-50%);
+            box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+        }
+
+        .tab-active {
+            border-color: #DE9B35;
+            color: #DE9B35;
+            background: rgba(222, 155, 53, 0.1);
+        }
+
+        .tab-inactive {
+            border-color: transparent;
+            color: #6b7280;
+        }
+
+        .tab-inactive:hover {
+            color: #9ca3af;
+            border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        .casket-card {
+            transition: all 0.3s ease;
+        }
+
+        .casket-card:hover {
+            border-color: rgba(136, 71, 255, 0.4);
+        }
+
+        .shimmer {
+            animation: shimmer 2s infinite;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.03), transparent);
+            background-size: 200% 100%;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -200% 0;
+            }
+
             100% {
-                opacity: 1;
+                background-position: 200% 0;
             }
-
-            50% {
-                opacity: 0.5;
-            }
-        }
-
-        .table-row-hover:hover {
-            background: rgba(94, 152, 217, 0.1);
         }
 
         .fade-in {
-            animation: fadeIn 0.3s ease-in;
+            animation: fadeIn 0.4s ease;
         }
 
         @keyframes fadeIn {
             from {
                 opacity: 0;
-                transform: translateY(-10px);
+                transform: translateY(8px);
             }
 
             to {
@@ -103,459 +145,569 @@
                 transform: translateY(0);
             }
         }
+
+        .item-image {
+            width: 80px;
+            height: 60px;
+            object-fit: contain;
+            filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
+        }
+
+        .badge {
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
     </style>
 </head>
 
 <body class="text-gray-100">
     <!-- Header -->
-    <header class="sticky top-0 z-50 glass-card border-b border-white/10">
-        <div class="max-w-7xl mx-auto px-4 py-4">
+    <header class="sticky top-0 z-50 glass border-b border-white/5">
+        <div class="max-w-[1600px] mx-auto px-6 py-3">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-4">
                     <div
-                        class="w-10 h-10 bg-gradient-to-br from-cs-orange to-cs-purple rounded-lg flex items-center justify-center">
+                        class="w-10 h-10 bg-gradient-to-br from-cs-orange to-cs-purple rounded-xl flex items-center justify-center shadow-lg shadow-cs-orange/20">
                         <svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24">
                             <path
                                 d="M21.4 8.5l-4.9-4.9c-.4-.4-1-.4-1.4 0L12 6.7 8.9 3.6c-.4-.4-1-.4-1.4 0L2.6 8.5c-.4.4-.4 1 0 1.4l3.1 3.1-3.1 3.1c-.4.4-.4 1 0 1.4l4.9 4.9c.4.4 1 .4 1.4 0L12 19.3l3.1 3.1c.4.4 1 .4 1.4 0l4.9-4.9c.4-.4.4-1 0-1.4l-3.1-3.1 3.1-3.1c.4-.4.4-1 0-1.4z" />
                         </svg>
                     </div>
                     <div>
-                        <h1 class="text-xl font-bold gradient-text">CS2 Inventory Tracker</h1>
-                        <p class="text-xs text-gray-400">
+                        <h1 class="text-lg font-bold gradient-text tracking-tight">CS2 Inventory Tracker</h1>
+                        <p class="text-[11px] text-gray-500 flex items-center gap-2">
                             <% if (status.isConnectedToGC) { %>
-                                <span class="inline-flex items-center gap-1"><span
+                                <span class="flex items-center gap-1"><span
                                         class="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span> GC
-                                    Connecté</span>
+                                    Online</span>
                                 <% } else { %>
-                                    <span class="inline-flex items-center gap-1 text-yellow-400"><span
-                                            class="w-1.5 h-1.5 bg-yellow-400 rounded-full"></span> GC Déconnecté</span>
+                                    <span class="flex items-center gap-1 text-yellow-400"><span
+                                            class="w-1.5 h-1.5 bg-yellow-400 rounded-full"></span> GC Offline</span>
                                     <% } %>
+                                        <% if (lastRefresh) { %>
+                                            <span class="text-gray-600">•</span>
+                                            <span>MAJ: <%= new Date(lastRefresh).toLocaleTimeString('fr-FR', {
+                                                    hour: '2-digit' , minute: '2-digit' }) %></span>
+                                            <% } %>
                         </p>
                     </div>
                 </div>
-                <div class="flex items-center gap-6">
-                    <div class="text-right">
-                        <p class="text-3xl font-bold text-white">€<%= totalValue.toLocaleString('fr-FR', {
-                                minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+                <div class="flex items-center gap-4">
+                    <div class="text-right hidden sm:block">
+                        <p class="text-2xl font-extrabold text-white tracking-tight">€<%=
+                                totalValue.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2
+                                }) %>
                         </p>
-                        <p class="text-xs text-gray-400">Valeur totale</p>
+                        <p class="text-[11px] text-gray-500">
+                            <%= totalItems %> items • Steam Market
+                        </p>
                     </div>
-                    <% if (lastRefresh) { %>
-                        <div class="text-xs text-gray-400 text-right">
-                            <p>Dernière màj</p>
-                            <p class="text-gray-300">
-                                <%= new Date(lastRefresh).toLocaleString('fr-FR') %>
-                            </p>
-                        </div>
-                        <% } %>
-                            <form action="/logout" method="POST">
-                                <button type="submit"
-                                    class="px-3 py-2 bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition-colors text-sm font-medium">
-                                    Déconnexion
-                                </button>
-                            </form>
+                    <div class="flex items-center gap-2">
+                        <form action="/dashboard/refresh" method="POST">
+                            <button type="submit" class="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors"
+                                title="Actualiser" <%=isRefreshing ? 'disabled' : '' %>>
+                                <svg class="w-4 h-4 <%= isRefreshing ? 'animate-spin text-cs-orange' : 'text-gray-400' %>"
+                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                            </button>
+                        </form>
+                        <a href="/dashboard/export"
+                            class="p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors" title="Export CSV">
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                        </a>
+                        <form action="/logout" method="POST">
+                            <button type="submit"
+                                class="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 transition-colors"
+                                title="Déconnexion">
+                                <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                </svg>
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
         </div>
     </header>
 
-    <main class="max-w-7xl mx-auto px-4 py-6">
+    <main class="max-w-[1600px] mx-auto px-6 py-6">
         <% if (typeof error !=='undefined' && error) { %>
-            <div class="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300">
+            <div class="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-xl text-red-300 text-sm">
                 <strong>Erreur:</strong>
                 <%= error %>
             </div>
             <% } %>
 
                 <!-- KPI Cards -->
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 fade-in">
                     <!-- Total Items -->
-                    <div class="glass-card rounded-xl p-5">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-sm text-gray-400 mb-1">Nombre d'items</p>
-                                <p class="text-3xl font-bold text-white">
-                                    <%= totalItems.toLocaleString() %>
-                                </p>
-                                <p class="text-xs text-gray-500 mt-1">
-                                    <%= uniqueItems %> items uniques
-                                </p>
-                            </div>
-                            <div class="w-12 h-12 bg-cs-blue/20 rounded-lg flex items-center justify-center">
-                                <svg class="w-6 h-6 text-cs-blue" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
-                                </svg>
-                            </div>
-                        </div>
+                    <div class="glass rounded-2xl p-5 glass-hover">
+                        <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Items Total</p>
+                        <p class="text-3xl font-extrabold text-white">
+                            <%= totalItems.toLocaleString() %>
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">
+                            <%= uniqueItems %> uniques
+                        </p>
                     </div>
-
+                    <!-- Storage Units -->
+                    <div class="glass rounded-2xl p-5 glass-hover">
+                        <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Storage Units</p>
+                        <p class="text-3xl font-extrabold text-cs-purple">
+                            <%= storageUnits.length %>
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">
+                            <%= totalItems - mainInventory.count %> items stockés
+                        </p>
+                    </div>
                     <!-- Total Value -->
-                    <div class="glass-card rounded-xl p-5">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-sm text-gray-400 mb-1">Valeur moyenne</p>
-                                <p class="text-3xl font-bold text-white">€<%= totalValue.toLocaleString('fr-FR', {
-                                        minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
-                                </p>
-                                <p class="text-xs text-gray-500 mt-1">Moyenne Steam + APIs</p>
-                            </div>
-                            <div class="w-12 h-12 bg-cs-orange/20 rounded-lg flex items-center justify-center">
-                                <svg class="w-6 h-6 text-cs-orange" fill="none" stroke="currentColor"
-                                    viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            </div>
-                        </div>
+                    <div class="glass rounded-2xl p-5 glass-hover">
+                        <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Valeur Totale</p>
+                        <p class="text-3xl font-extrabold text-cs-orange">€<%= totalValue.toLocaleString('fr-FR', {
+                                minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+                        </p>
+                        <p class="text-xs text-gray-500 mt-1">Steam Market</p>
                     </div>
-
-                    <!-- 24h Evolution -->
-                    <div class="glass-card rounded-xl p-5">
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <p class="text-sm text-gray-400 mb-1">Évolution 24h</p>
-                                <% if (change24h.hasData) { %>
-                                    <p
-                                        class="text-3xl font-bold <%= change24h.percentage >= 0 ? 'text-green-400' : 'text-red-400' %>">
-                                        <%= change24h.percentage>= 0 ? '+' : '' %><%= change24h.percentage.toFixed(2) %>
-                                                %
-                                    </p>
-                                    <p class="text-xs text-gray-500 mt-1">
-                                        <%= change24h.change>= 0 ? '+' : '' %>€<%= change24h.change.toFixed(2) %>
-                                    </p>
-                                    <% } else { %>
-                                        <p class="text-3xl font-bold text-gray-500">--</p>
-                                        <p class="text-xs text-gray-500 mt-1">Pas assez de données</p>
-                                        <% } %>
-                            </div>
-                            <div
-                                class="w-12 h-12 <%= change24h.percentage >= 0 ? 'bg-green-500/20' : 'bg-red-500/20' %> rounded-lg flex items-center justify-center">
-                                <svg class="w-6 h-6 <%= change24h.percentage >= 0 ? 'text-green-400' : 'text-red-400' %>"
-                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="<%= change24h.percentage >= 0 ? 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' : 'M13 17h8m0 0V9m0 8l-8-8-4 4-6-6' %>" />
-                                </svg>
-                            </div>
-                        </div>
+                    <!-- 24h Change -->
+                    <div class="glass rounded-2xl p-5 glass-hover">
+                        <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Évolution 24h</p>
+                        <% if (change24h.hasData) { %>
+                            <p
+                                class="text-3xl font-extrabold <%= change24h.percentage >= 0 ? 'text-green-400' : 'text-red-400' %>">
+                                <%= change24h.percentage>= 0 ? '+' : '' %><%= change24h.percentage.toFixed(1) %>%
+                            </p>
+                            <p class="text-xs text-gray-500 mt-1">
+                                <%= change24h.change>= 0 ? '+' : '' %>€<%= change24h.change.toFixed(2) %>
+                            </p>
+                            <% } else { %>
+                                <p class="text-3xl font-extrabold text-gray-600">—</p>
+                                <p class="text-xs text-gray-600 mt-1">Pas de données</p>
+                                <% } %>
                     </div>
                 </div>
 
-                <!-- Chart Section -->
-                <div class="glass-card rounded-xl p-6 mb-6">
+                <!-- Chart -->
+                <div class="glass rounded-2xl p-6 mb-6 fade-in">
                     <div class="flex items-center justify-between mb-4">
-                        <h2 class="text-lg font-semibold">Historique de valeur</h2>
-                        <div class="flex gap-2">
-                            <a href="?days=7"
-                                class="px-3 py-1 text-sm rounded-lg transition-colors <%= days === 7 ? 'bg-cs-purple text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10' %>">7
-                                jours</a>
-                            <a href="?days=30"
-                                class="px-3 py-1 text-sm rounded-lg transition-colors <%= days === 30 ? 'bg-cs-purple text-white' : 'bg-white/5 text-gray-400 hover:bg-white/10' %>">30
-                                jours</a>
+                        <h2 class="text-sm font-semibold text-gray-300 uppercase tracking-wider">Historique de valeur
+                        </h2>
+                        <div class="flex gap-1">
+                            <a href="?days=7&tab=<%= tab %>"
+                                class="px-3 py-1 text-xs rounded-lg transition-all <%= days === 7 ? 'bg-cs-orange/20 text-cs-orange' : 'text-gray-500 hover:text-gray-300' %>">7J</a>
+                            <a href="?days=30&tab=<%= tab %>"
+                                class="px-3 py-1 text-xs rounded-lg transition-all <%= days === 30 ? 'bg-cs-orange/20 text-cs-orange' : 'text-gray-500 hover:text-gray-300' %>">30J</a>
+                            <a href="?days=90&tab=<%= tab %>"
+                                class="px-3 py-1 text-xs rounded-lg transition-all <%= days === 90 ? 'bg-cs-orange/20 text-cs-orange' : 'text-gray-500 hover:text-gray-300' %>">90J</a>
                         </div>
                     </div>
-                    <div class="h-64">
-                        <canvas id="historyChart"></canvas>
-                    </div>
+                    <div class="h-52"><canvas id="historyChart"></canvas></div>
                 </div>
 
-                <!-- Price Alerts -->
-                <% if (priceAlerts.length> 0) { %>
-                    <div class="glass-card rounded-xl p-6 mb-6">
-                        <h2 class="text-lg font-semibold mb-4 flex items-center gap-2">
-                            <svg class="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd"
-                                    d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                                    clip-rule="evenodd" />
-                            </svg>
-                            Alertes de prix (±5%)
-                        </h2>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                            <% priceAlerts.slice(0, 6).forEach(alert=> { %>
-                                <div
-                                    class="flex items-center justify-between p-3 rounded-lg bg-black/20 border-l-4 <%= alert.direction === 'up' ? 'border-green-500' : 'border-red-500' %>">
-                                    <span class="text-sm truncate flex-1 mr-2" title="<%= alert.market_hash_name %>">
-                                        <%= alert.market_hash_name %>
-                                    </span>
-                                    <span
-                                        class="text-sm font-semibold <%= alert.direction === 'up' ? 'text-green-400' : 'text-red-400' %> whitespace-nowrap">
-                                        <%= alert.percentage> 0 ? '+' : '' %><%= alert.percentage.toFixed(1) %>%
-                                    </span>
+                <!-- Tabs -->
+                <div class="flex gap-1 mb-6 border-b border-white/5 fade-in">
+                    <a href="?tab=overview&days=<%= days %>"
+                        class="px-5 py-3 text-sm font-medium border-b-2 transition-all rounded-t-lg <%= tab === 'overview' ? 'tab-active' : 'tab-inactive' %>">
+                        📦 Tous les Items
+                    </a>
+                    <a href="?tab=caskets&days=<%= days %>"
+                        class="px-5 py-3 text-sm font-medium border-b-2 transition-all rounded-t-lg <%= tab === 'caskets' ? 'tab-active' : 'tab-inactive' %>">
+                        🗄️ Storage Units (<%= storageUnits.length %>)
+                    </a>
+                    <a href="?tab=main&days=<%= days %>"
+                        class="px-5 py-3 text-sm font-medium border-b-2 transition-all rounded-t-lg <%= tab === 'main' ? 'tab-active' : 'tab-inactive' %>">
+                        🎒 Inventaire Principal (<%= mainInventory.count %>)
+                    </a>
+                </div>
+
+                <!-- TAB: Overview (all items) -->
+                <% if (tab==='overview' ) { %>
+                    <div class="fade-in">
+                        <!-- Search -->
+                        <div class="mb-4 flex gap-3">
+                            <div class="relative flex-1 max-w-sm">
+                                <input type="text" id="searchInput" placeholder="Rechercher un item..."
+                                    class="w-full px-4 py-2.5 pl-10 bg-cs-surface border border-white/5 rounded-xl text-sm focus:outline-none focus:border-cs-orange/50 transition-colors">
+                                <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none"
+                                    stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                            </div>
+                        </div>
+
+                        <!-- Item Grid -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" id="itemsGrid">
+                            <% items.forEach(item=> { %>
+                                <div class="glass rounded-xl p-4 item-card glass-hover"
+                                    data-name="<%= item.market_hash_name.toLowerCase() %>">
+                                    <div class="flex gap-4">
+                                        <!-- Item Image -->
+                                        <div
+                                            class="flex-shrink-0 w-20 h-16 rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
+                                            <img src="https://steamcommunity.com/economy/image/class/730/<%= encodeURIComponent(item.market_hash_name) %>/200fx200f"
+                                                alt="<%= item.market_hash_name %>" class="item-image" loading="lazy"
+                                                onerror="this.onerror=null; this.src=''; this.style.display='none'; this.parentElement.innerHTML='<span class=\'text-2xl\'>🔫</span>'">
+                                        </div>
+                                        <!-- Item Info -->
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-start justify-between gap-2">
+                                                <div class="min-w-0">
+                                                    <p class="text-sm font-semibold text-white truncate"
+                                                        title="<%= item.market_hash_name %>">
+                                                        <%= item.market_hash_name %>
+                                                    </p>
+                                                    <div class="flex items-center gap-2 mt-1">
+                                                        <span class="badge"
+                                                            style="background: <%= item.rarity.bg %>; color: <%= item.rarity.color %>">
+                                                            <%= item.rarity.name %>
+                                                        </span>
+                                                        <% if (item.quantity> 1) { %>
+                                                            <span class="badge bg-white/5 text-gray-400">x<%=
+                                                                    item.quantity %></span>
+                                                            <% } %>
+                                                                <% if (item.casket_ids.length> 0) { %>
+                                                                    <span
+                                                                        class="badge bg-cs-purple/15 text-cs-purple">📦
+                                                                        <%= item.casket_ids.length %>
+                                                                    </span>
+                                                                    <% } %>
+                                                    </div>
+                                                </div>
+                                                <div class="text-right flex-shrink-0">
+                                                    <p class="text-sm font-bold text-cs-orange">€<%=
+                                                            item.total.toFixed(2) %>
+                                                    </p>
+                                                    <% if (item.prices.steam) { %>
+                                                        <p class="text-[11px] text-gray-500">€<%=
+                                                                item.prices.steam.toFixed(2) %>/u</p>
+                                                        <% } else { %>
+                                                            <p class="text-[11px] text-gray-600">—</p>
+                                                            <% } %>
+                                                </div>
+                                            </div>
+                                            <!-- Float Bar -->
+                                            <% if (item.float_value) { %>
+                                                <div class="mt-2">
+                                                    <div
+                                                        class="flex items-center justify-between text-[10px] text-gray-500 mb-0.5">
+                                                        <span
+                                                            style="color: <%= item.wear ? item.wear.color : '#999' %>">
+                                                            <%= item.wear ? item.wear.name : '' %>
+                                                        </span>
+                                                        <span class="font-mono">
+                                                            <%= item.float_value.toFixed(8) %>
+                                                        </span>
+                                                    </div>
+                                                    <div class="float-bar">
+                                                        <div class="float-marker"
+                                                            style="left: <%= (item.float_value * 100) %>%"></div>
+                                                    </div>
+                                                </div>
+                                                <% } %>
+                                        </div>
+                                    </div>
                                 </div>
                                 <% }) %>
                         </div>
+
+                        <!-- Pagination -->
+                        <% if (pagination.totalPages> 1) { %>
+                            <div class="flex items-center justify-center gap-2 mt-6">
+                                <% if (pagination.page> 1) { %>
+                                    <a href="?page=<%= pagination.page - 1 %>&days=<%= days %>&tab=overview"
+                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10 transition-colors">←</a>
+                                    <% } %>
+                                        <% for (let p=Math.max(1, pagination.page - 2); p
+                                            <=Math.min(pagination.totalPages, pagination.page + 2); p++) { %>
+                                            <a href="?page=<%= p %>&days=<%= days %>&tab=overview"
+                                                class="px-3 py-1.5 text-sm rounded-lg transition-colors <%= p === pagination.page ? 'bg-cs-orange text-white' : 'bg-white/5 hover:bg-white/10' %>">
+                                                <%= p %>
+                                            </a>
+                                            <% } %>
+                                                <% if (pagination.page < pagination.totalPages) { %>
+                                                    <a href="?page=<%= pagination.page + 1 %>&days=<%= days %>&tab=overview"
+                                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10 transition-colors">→</a>
+                                                    <% } %>
+                            </div>
+                            <% } %>
                     </div>
                     <% } %>
 
-                        <!-- Items Table -->
-                        <div class="glass-card rounded-xl p-6 mb-6">
-                            <div
-                                class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-4">
-                                <h2 class="text-lg font-semibold">Inventaire (<%= totalItems %> items)</h2>
-                                <div class="flex flex-wrap gap-3">
-                                    <!-- Search -->
-                                    <div class="relative">
-                                        <input type="text" id="searchInput" placeholder="Rechercher..."
-                                            class="w-48 px-4 py-2 pl-10 bg-black/30 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-cs-purple">
-                                        <svg class="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
-                                            fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                        </svg>
-                                    </div>
-                                    <!-- Casket Filter -->
-                                    <select id="casketFilter"
-                                        class="px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-sm focus:outline-none focus:border-cs-purple">
-                                        <option value="">Tous les Storage Units</option>
-                                        <% casketIds.forEach(id=> { %>
-                                            <option value="<%= id %>">Casket <%= id.substring(0, 8) %>...</option>
-                                            <% }) %>
-                                    </select>
+                        <!-- TAB: Storage Units -->
+                        <% if (tab==='caskets' ) { %>
+                            <div class="fade-in space-y-4">
+                                <!-- Storage Units Summary Cards -->
+                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+                                    <% storageUnits.forEach((su, idx)=> { %>
+                                        <div class="glass rounded-2xl p-5 casket-card border border-white/5 cursor-pointer"
+                                            onclick="toggleCasket('<%= su.casket_id %>')">
+                                            <div class="flex items-center justify-between mb-3">
+                                                <div class="flex items-center gap-3">
+                                                    <div
+                                                        class="w-10 h-10 rounded-xl bg-cs-purple/20 flex items-center justify-center">
+                                                        <span class="text-lg">🗄️</span>
+                                                    </div>
+                                                    <div>
+                                                        <p class="text-sm font-semibold text-white">Storage Unit #<%=
+                                                                idx + 1 %>
+                                                        </p>
+                                                        <p class="text-[11px] text-gray-500 font-mono">...<%=
+                                                                su.short_id %>
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div class="text-right">
+                                                    <p class="text-lg font-bold text-cs-orange">€<%=
+                                                            su.total_value.toFixed(2) %>
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center justify-between text-xs text-gray-400">
+                                                <span>
+                                                    <%= su.item_count %> items (<%= su.unique_items %> uniques)
+                                                </span>
+                                                <span id="toggle-<%= su.casket_id %>" class="text-cs-purple">▼
+                                                    Détails</span>
+                                            </div>
+                                            <!-- Expanded detail -->
+                                            <div id="casket-<%= su.casket_id %>"
+                                                class="hidden mt-4 pt-4 border-t border-white/5 space-y-2 max-h-96 overflow-y-auto">
+                                                <% su.items.forEach(ci=> { %>
+                                                    <div
+                                                        class="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/3">
+                                                        <div class="flex items-center gap-2 min-w-0 flex-1">
+                                                            <span class="badge flex-shrink-0"
+                                                                style="background: <%= ci.rarity.bg %>; color: <%= ci.rarity.color %>">
+                                                                <%= ci.rarity.name.substring(0,3) %>
+                                                            </span>
+                                                            <span class="text-xs text-gray-300 truncate"
+                                                                title="<%= ci.market_hash_name %>">
+                                                                <%= ci.market_hash_name %>
+                                                            </span>
+                                                            <% if (ci.quantity> 1) { %>
+                                                                <span class="text-[10px] text-gray-500">x<%= ci.quantity
+                                                                        %></span>
+                                                                <% } %>
+                                                        </div>
+                                                        <div class="flex items-center gap-3 flex-shrink-0">
+                                                            <% if (ci.float_value) { %>
+                                                                <span class="text-[10px] font-mono"
+                                                                    style="color: <%= ci.wear ? ci.wear.color : '#666' %>">
+                                                                    <%= ci.wear ? ci.wear.short : '' %>
+                                                                </span>
+                                                                <% } %>
+                                                                    <span class="text-xs font-semibold text-white">
+                                                                        <%= ci.price ? '€' + ci.price.toFixed(2) : '—'
+                                                                            %>
+                                                                    </span>
+                                                                    <% if (ci.quantity> 1) { %>
+                                                                        <span
+                                                                            class="text-[10px] text-cs-orange font-bold">€
+                                                                            <%= ci.total.toFixed(2) %>
+                                                                        </span>
+                                                                        <% } %>
+                                                        </div>
+                                                    </div>
+                                                    <% }) %>
+                                            </div>
+                                        </div>
+                                        <% }) %>
                                 </div>
                             </div>
+                            <% } %>
 
-                            <div class="overflow-x-auto">
-                                <table class="w-full text-sm" id="itemsTable">
-                                    <thead>
-                                        <tr class="text-left text-gray-400 border-b border-white/10">
-                                            <th class="py-3 px-2 cursor-pointer hover:text-white"
-                                                onclick="sortTable(0)">Item ↕</th>
-                                            <th class="py-3 px-2 text-center cursor-pointer hover:text-white"
-                                                onclick="sortTable(1)">Qté ↕</th>
-                                            <th class="py-3 px-2 cursor-pointer hover:text-white"
-                                                onclick="sortTable(2)">Float ↕</th>
-                                            <th class="py-3 px-2">Storage Unit</th>
-                                            <th class="py-3 px-2 text-right cursor-pointer hover:text-white"
-                                                onclick="sortTable(4)">Steam ↕</th>
-                                            <th class="py-3 px-2 text-right cursor-pointer hover:text-white"
-                                                onclick="sortTable(5)">Skinport ↕</th>
-                                            <th class="py-3 px-2 text-right cursor-pointer hover:text-white"
-                                                onclick="sortTable(6)">Moyenne ↕</th>
-                                            <th class="py-3 px-2 text-right font-semibold cursor-pointer hover:text-white"
-                                                onclick="sortTable(7)">Total ↕</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="itemsBody">
-                                        <% items.forEach((item, index)=> { %>
-                                            <tr class="border-b border-white/5 table-row-hover transition-colors"
-                                                data-name="<%= item.market_hash_name.toLowerCase() %>"
-                                                data-casket="<%= item.casket_ids.join(',') %>">
-                                                <td class="py-3 px-2">
-                                                    <span class="truncate block max-w-[200px]"
-                                                        title="<%= item.market_hash_name %>">
-                                                        <%= item.market_hash_name %>
-                                                    </span>
-                                                </td>
-                                                <td class="py-3 px-2 text-center">
-                                                    <span
-                                                        class="bg-cs-blue/20 text-cs-blue px-2 py-0.5 rounded text-xs font-medium">
-                                                        <%= item.quantity %>
-                                                    </span>
-                                                </td>
-                                                <td class="py-3 px-2 text-gray-400 font-mono text-xs">
-                                                    <%= item.float_value ? item.float_value.toFixed(6) : '-' %>
-                                                </td>
-                                                <td class="py-3 px-2 text-gray-400 text-xs">
-                                                    <% if (item.casket_ids.length> 0) { %>
-                                                        <span
-                                                            class="bg-cs-purple/20 text-cs-purple px-2 py-0.5 rounded">
-                                                            <%= item.casket_ids.length %> casket(s)
-                                                        </span>
-                                                        <% } else { %>
-                                                            <span class="text-gray-500">Main</span>
-                                                            <% } %>
-                                                </td>
-                                                <td class="py-3 px-2 text-right text-gray-300">
-                                                    <%= item.prices.steam ? '€' + item.prices.steam.toFixed(2) : '-' %>
-                                                </td>
-                                                <td class="py-3 px-2 text-right text-gray-300">
-                                                    <%= item.prices.skinport ? '€' + item.prices.skinport.toFixed(2)
-                                                        : '-' %>
-                                                </td>
-                                                <td class="py-3 px-2 text-right text-white font-medium">
-                                                    <%= item.prices.average ? '€' + item.prices.average.toFixed(2) : '-'
-                                                        %>
-                                                </td>
-                                                <td class="py-3 px-2 text-right text-cs-orange font-semibold">
-                                                    €<%= item.total.toFixed(2) %>
-                                                </td>
-                                            </tr>
-                                            <% }) %>
-                                    </tbody>
-                                </table>
-                            </div>
+                                <!-- TAB: Main Inventory -->
+                                <% if (tab==='main' ) { %>
+                                    <div class="fade-in">
+                                        <div class="glass rounded-2xl p-5 mb-4">
+                                            <div class="flex items-center justify-between">
+                                                <div>
+                                                    <p class="text-sm font-semibold text-gray-300">Inventaire Principal
+                                                    </p>
+                                                    <p class="text-xs text-gray-500">
+                                                        <%= mainInventory.count %> items
+                                                    </p>
+                                                </div>
+                                                <p class="text-xl font-bold text-cs-orange">€<%=
+                                                        mainInventory.total.toFixed(2) %>
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                                            <% mainInventory.items.forEach(mi=> { %>
+                                                <div class="glass rounded-xl p-4 item-card glass-hover">
+                                                    <div class="flex gap-3">
+                                                        <div
+                                                            class="flex-shrink-0 w-16 h-12 rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
+                                                            <img src="https://steamcommunity.com/economy/image/class/730/<%= encodeURIComponent(mi.market_hash_name) %>/150fx150f"
+                                                                alt="" class="w-14 h-10 object-contain" loading="lazy"
+                                                                onerror="this.onerror=null; this.src=''; this.style.display='none'; this.parentElement.innerHTML='<span class=\'text-xl\'>🔫</span>'">
+                                                        </div>
+                                                        <div class="flex-1 min-w-0">
+                                                            <div class="flex items-start justify-between gap-2">
+                                                                <div class="min-w-0">
+                                                                    <p
+                                                                        class="text-xs font-semibold text-white truncate">
+                                                                        <%= mi.market_hash_name %>
+                                                                    </p>
+                                                                    <div class="flex items-center gap-1.5 mt-0.5">
+                                                                        <span class="badge"
+                                                                            style="background: <%= mi.rarity.bg %>; color: <%= mi.rarity.color %>">
+                                                                            <%= mi.rarity.name %>
+                                                                        </span>
+                                                                        <% if (mi.wear) { %>
+                                                                            <span class="text-[10px] font-mono"
+                                                                                style="color: <%= mi.wear.color %>">
+                                                                                <%= mi.wear.short %>
+                                                                            </span>
+                                                                            <% } %>
+                                                                                <% if (mi.quantity> 1) { %>
+                                                                                    <span
+                                                                                        class="badge bg-white/5 text-gray-400">x
+                                                                                        <%= mi.quantity %>
+                                                                                    </span>
+                                                                                    <% } %>
+                                                                    </div>
+                                                                </div>
+                                                                <div class="text-right flex-shrink-0">
+                                                                    <p class="text-sm font-bold text-cs-orange">€<%=
+                                                                            mi.total.toFixed(2) %>
+                                                                    </p>
+                                                                    <% if (mi.price) { %>
+                                                                        <p class="text-[10px] text-gray-500">€<%=
+                                                                                mi.price.toFixed(2) %>/u</p>
+                                                                        <% } %>
+                                                                </div>
+                                                            </div>
+                                                            <% if (mi.float_value) { %>
+                                                                <div class="mt-1.5">
+                                                                    <div class="float-bar">
+                                                                        <div class="float-marker"
+                                                                            style="left: <%= (mi.float_value * 100) %>%">
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                                <% } %>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <% }) %>
+                                        </div>
+                                    </div>
+                                    <% } %>
 
-                            <!-- Pagination -->
-                            <% if (pagination.totalPages> 1) { %>
-                                <div class="flex items-center justify-between mt-4 pt-4 border-t border-white/10">
-                                    <p class="text-sm text-gray-400">
-                                        Affichage <%= ((pagination.page - 1) * pagination.perPage) + 1 %> - <%=
-                                                Math.min(pagination.page * pagination.perPage, pagination.total) %> sur
-                                                <%= pagination.total %>
-                                    </p>
-                                    <div class="flex gap-2">
-                                        <% if (pagination.page> 1) { %>
-                                            <a href="?page=<%= pagination.page - 1 %>&days=<%= days %>"
-                                                class="px-3 py-1 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">Précédent</a>
+                                        <!-- Price Alerts -->
+                                        <% if (priceAlerts.length> 0) { %>
+                                            <div class="glass rounded-2xl p-5 mt-6 fade-in">
+                                                <h3
+                                                    class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                                    <span class="text-yellow-400">⚡</span> Alertes de prix
+                                                </h3>
+                                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                                    <% priceAlerts.slice(0, 6).forEach(alert=> { %>
+                                                        <div
+                                                            class="flex items-center justify-between px-3 py-2 rounded-lg bg-black/20 border-l-2 <%= alert.direction === 'up' ? 'border-green-500' : 'border-red-500' %>">
+                                                            <span class="text-xs truncate flex-1 mr-2">
+                                                                <%= alert.market_hash_name %>
+                                                            </span>
+                                                            <span
+                                                                class="text-xs font-bold <%= alert.direction === 'up' ? 'text-green-400' : 'text-red-400' %>">
+                                                                <%= alert.percentage> 0 ? '+' : '' %><%=
+                                                                        alert.percentage.toFixed(1) %>%
+                                                            </span>
+                                                        </div>
+                                                        <% }) %>
+                                                </div>
+                                            </div>
                                             <% } %>
-                                                <% for (let p=Math.max(1, pagination.page - 2); p
-                                                    <=Math.min(pagination.totalPages, pagination.page + 2); p++) { %>
-                                                    <a href="?page=<%= p %>&days=<%= days %>"
-                                                        class="px-3 py-1 rounded-lg transition-colors <%= p === pagination.page ? 'bg-cs-purple text-white' : 'bg-white/5 hover:bg-white/10' %>">
-                                                        <%= p %>
-                                                    </a>
-                                                    <% } %>
-                                                        <% if (pagination.page < pagination.totalPages) { %>
-                                                            <a href="?page=<%= pagination.page + 1 %>&days=<%= days %>"
-                                                                class="px-3 py-1 bg-white/5 rounded-lg hover:bg-white/10 transition-colors">Suivant</a>
-                                                            <% } %>
-                                    </div>
-                                </div>
-                                <% } %>
-                        </div>
-
-                        <!-- Actions Footer -->
-                        <div class="glass-card rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
-                            <div class="flex items-center gap-4">
-                                <form action="/refresh" method="POST" class="inline">
-                                    <button type="submit"
-                                        class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-cs-orange to-cs-purple rounded-lg font-medium hover:opacity-90 transition-opacity <%= isRefreshing ? 'opacity-50 cursor-not-allowed' : '' %>"
-                                        <%=isRefreshing ? 'disabled' : '' %>>
-                                        <svg class="w-4 h-4 <%= isRefreshing ? 'animate-spin' : '' %>" fill="none"
-                                            stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                        </svg>
-                                        <%= isRefreshing ? 'Actualisation...' : 'Actualiser' %>
-                                    </button>
-                                </form>
-                                <a href="/export"
-                                    class="flex items-center gap-2 px-4 py-2 bg-white/10 rounded-lg font-medium hover:bg-white/20 transition-colors">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                            d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    Exporter CSV
-                                </a>
-                            </div>
-                            <div class="text-sm text-gray-400">
-                                <% if (isRefreshing) { %>
-                                    <span class="flex items-center gap-2">
-                                        <span class="w-2 h-2 bg-cs-orange rounded-full animate-pulse"></span>
-                                        Actualisation en cours...
-                                    </span>
-                                    <% } else { %>
-                                        Auto-refresh toutes les 10 min
-                                        <% } %>
-                            </div>
-                        </div>
     </main>
 
     <script>
-        // Chart.js initialization
+        // Chart
         const historyData = <% - JSON.stringify(historyData) %>;
         const ctx = document.getElementById('historyChart');
-
         if (historyData.length > 0) {
             new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: historyData.map(d => new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })),
                     datasets: [{
-                        label: 'Valeur totale (€)',
+                        label: 'Valeur (€)',
                         data: historyData.map(d => d.value),
                         borderColor: '#DE9B35',
-                        backgroundColor: 'rgba(222, 155, 53, 0.1)',
-                        tension: 0.3,
+                        backgroundColor: (context) => {
+                            const chart = context.chart;
+                            const { ctx, chartArea } = chart;
+                            if (!chartArea) return 'rgba(222, 155, 53, 0.1)';
+                            const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                            gradient.addColorStop(0, 'rgba(222, 155, 53, 0.2)');
+                            gradient.addColorStop(1, 'rgba(222, 155, 53, 0)');
+                            return gradient;
+                        },
+                        tension: 0.4,
                         fill: true,
-                        pointRadius: 3,
-                        pointHoverRadius: 6
+                        pointRadius: 2,
+                        pointHoverRadius: 5,
+                        pointBackgroundColor: '#DE9B35',
+                        borderWidth: 2
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                    responsive: true, maintainAspectRatio: false,
                     interaction: { intersect: false, mode: 'index' },
                     plugins: {
                         legend: { display: false },
                         tooltip: {
-                            backgroundColor: 'rgba(27, 40, 56, 0.9)',
-                            titleColor: '#fff',
-                            bodyColor: '#DE9B35',
-                            borderColor: 'rgba(255, 255, 255, 0.1)',
-                            borderWidth: 1,
-                            callbacks: {
-                                label: ctx => '€' + ctx.parsed.y.toLocaleString('fr-FR', { minimumFractionDigits: 2 })
-                            }
+                            backgroundColor: 'rgba(10, 14, 20, 0.95)', titleColor: '#fff', bodyColor: '#DE9B35',
+                            borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 12,
+                            callbacks: { label: ctx => '€' + ctx.parsed.y.toLocaleString('fr-FR', { minimumFractionDigits: 2 }) }
                         }
                     },
                     scales: {
-                        x: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#6b7280' } },
-                        y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#6b7280', callback: v => '€' + v.toLocaleString() } }
+                        x: { grid: { display: false }, ticks: { color: '#374151', font: { size: 10 } } },
+                        y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#374151', font: { size: 10 }, callback: v => '€' + v.toLocaleString() } }
                     }
                 }
             });
         } else {
-            ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">Pas encore de données historiques</div>';
+            ctx.parentElement.innerHTML = '<div class="flex items-center justify-center h-full text-gray-600 text-sm">Pas encore de données historiques</div>';
         }
 
-        // Search functionality
-        document.getElementById('searchInput').addEventListener('input', filterTable);
-        document.getElementById('casketFilter').addEventListener('change', filterTable);
-
-        function filterTable() {
-            const search = document.getElementById('searchInput').value.toLowerCase();
-            const casket = document.getElementById('casketFilter').value;
-            const rows = document.querySelectorAll('#itemsBody tr');
-
-            rows.forEach(row => {
-                const name = row.dataset.name;
-                const caskets = row.dataset.casket;
-                const matchesSearch = !search || name.includes(search);
-                const matchesCasket = !casket || caskets.includes(casket);
-                row.style.display = matchesSearch && matchesCasket ? '' : 'none';
+        // Search
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.addEventListener('input', () => {
+                const q = searchInput.value.toLowerCase();
+                document.querySelectorAll('#itemsGrid > div').forEach(card => {
+                    card.style.display = card.dataset.name?.includes(q) ? '' : 'none';
+                });
             });
         }
 
-        // Sort functionality
-        let sortDir = {};
-        function sortTable(col) {
-            const table = document.getElementById('itemsTable');
-            const tbody = table.querySelector('tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-
-            sortDir[col] = !sortDir[col];
-
-            rows.sort((a, b) => {
-                let aVal = a.cells[col].innerText.replace(/[€,]/g, '').trim();
-                let bVal = b.cells[col].innerText.replace(/[€,]/g, '').trim();
-
-                // Try numeric sort
-                const aNum = parseFloat(aVal) || 0;
-                const bNum = parseFloat(bVal) || 0;
-
-                if (!isNaN(aNum) && !isNaN(bNum)) {
-                    return sortDir[col] ? aNum - bNum : bNum - aNum;
-                }
-
-                // String sort
-                return sortDir[col] ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-            });
-
-            rows.forEach(row => tbody.appendChild(row));
+        // Casket toggle
+        function toggleCasket(id) {
+            const el = document.getElementById('casket-' + id);
+            const toggle = document.getElementById('toggle-' + id);
+            if (el) {
+                el.classList.toggle('hidden');
+                toggle.textContent = el.classList.contains('hidden') ? '▼ Détails' : '▲ Réduire';
+            }
         }
 
-        // Auto-refresh status check
+        // Auto-refresh poll
         <% if (isRefreshing) { %>
             setInterval(() => {
-                fetch('/api/status')
-                    .then(r => r.json())
-                    .then(data => {
-                        if (!data.isRefreshing) {
-                            window.location.reload();
-                        }
-                    });
-            }, 3000);
+                fetch('/dashboard/api/status').then(r => r.json()).then(d => { if (!d.isRefreshing) location.reload(); });
+            }, 5000);
         <% } %>
     </script>
 </body>

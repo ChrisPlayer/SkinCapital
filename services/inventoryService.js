@@ -1,6 +1,7 @@
 const steamAuth = require('./steamAuth');
 const db = require('../config/database');
 const priceService = require('./priceService');
+const itemSchema = require('./itemSchema');
 
 let lastRefresh = null;
 let isRefreshing = false;
@@ -88,13 +89,17 @@ async function loadStorageUnit(casketId) {
                     return;
                 }
 
-                const parsedItems = items.map(item => ({
-                    market_hash_name: getMarketHashName(item),
-                    asset_id: item.id?.toString(),
-                    casket_id: casketId,
-                    float_value: item.paintwear || null,
-                    paint_seed: item.paintseed || null
-                }));
+                const parsedItems = items.map(item => {
+                    // Use schema resolver for GC items
+                    const resolved = itemSchema.resolveItem(item);
+                    return {
+                        market_hash_name: resolved.market_hash_name,
+                        asset_id: item.id?.toString(),
+                        casket_id: casketId,
+                        float_value: resolved.float_value,
+                        paint_seed: resolved.paint_seed
+                    };
+                });
 
                 console.log(`[Inventory] Loaded ${parsedItems.length} items from casket ${casketId}`);
                 resolve(parsedItems);
@@ -106,26 +111,7 @@ async function loadStorageUnit(casketId) {
     });
 }
 
-/**
- * Get market hash name from GC item data
- * @param {Object} item - GC item object
- * @returns {string} Market hash name
- */
-function getMarketHashName(item) {
-    // node-globaloffensive provides market_hash_name or we construct it
-    if (item.market_hash_name) {
-        return item.market_hash_name;
-    }
-
-    // Fallback: construct from available data
-    let name = item.custom_name || item.name || 'Unknown Item';
-
-    if (item.wear_name) {
-        name += ` (${item.wear_name})`;
-    }
-
-    return name;
-}
+// getMarketHashName is now handled by itemSchema.resolveItem()
 
 /**
  * Get all items from all Storage Units
@@ -246,6 +232,9 @@ async function refresh() {
     try {
         console.log('[Inventory] Starting full refresh...');
 
+        // Initialize item schema (downloads CS2 item DB once, then cached)
+        await itemSchema.initialize();
+
         // Get all items
         const items = await getAllInventory();
 
@@ -258,6 +247,18 @@ async function refresh() {
         // Get unique market hash names for pricing
         const uniqueNames = [...new Set(items.map(i => i.market_hash_name))];
         console.log(`[Inventory] Fetching prices for ${uniqueNames.length} unique items...`);
+
+        // Debug: show how items break down
+        const storageItems = items.filter(i => i.casket_id);
+        const mainItems = items.filter(i => !i.casket_id);
+        const storageUniqueNames = [...new Set(storageItems.map(i => i.market_hash_name))];
+        console.log(`[Inventory] Main inventory unique names: ${[...new Set(mainItems.map(i => i.market_hash_name))].length}`);
+        console.log(`[Inventory] Storage items unique names: ${storageUniqueNames.length}`);
+        if (storageUniqueNames.length <= 5) {
+            console.log(`[Inventory] Storage names sample:`, storageUniqueNames);
+        } else {
+            console.log(`[Inventory] Storage names sample:`, storageUniqueNames.slice(0, 10));
+        }
 
         // Fetch prices (rate limited)
         let totalValue = 0;

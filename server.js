@@ -196,7 +196,7 @@ app.use((req, res) => {
  */
 async function initialize() {
     console.log('╔════════════════════════════════════════════╗');
-    console.log('║       CS2 Inventory Tracker v1.1.0         ║');
+    console.log('║       CS2 Inventory Tracker v1.2.0         ║');
     console.log('║          🔒 Secure Login Edition           ║');
     console.log('╚════════════════════════════════════════════╝');
     console.log('');

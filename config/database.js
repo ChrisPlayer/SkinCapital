@@ -63,6 +63,9 @@ async function init() {
     db.run(`DELETE FROM history WHERE timestamp < date('now', '-90 days')`);
     db.run(`DELETE FROM prices WHERE timestamp < datetime('now', '-30 days')`);
 
+    // Add icon_url column if not present (migration for existing DBs)
+    try { db.run('ALTER TABLE items ADD COLUMN icon_url TEXT'); } catch (e) { /* already exists */ }
+
     saveToFile();
     console.log('[DB] Database initialized successfully');
 }
@@ -134,8 +137,8 @@ function getItemsFromCasket(casketId) {
 
 function insertItem(item) {
     return run(
-        `INSERT INTO items (market_hash_name, asset_id, casket_id, float_value, paint_seed) VALUES (?, ?, ?, ?, ?)`,
-        [item.market_hash_name, item.asset_id, item.casket_id, item.float_value, item.paint_seed]
+        `INSERT INTO items (market_hash_name, asset_id, casket_id, float_value, paint_seed, icon_url) VALUES (?, ?, ?, ?, ?, ?)`,
+        [item.market_hash_name, item.asset_id, item.casket_id, item.float_value, item.paint_seed, item.icon_url || null]
     );
 }
 

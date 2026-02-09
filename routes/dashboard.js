@@ -6,12 +6,36 @@ const historyService = require('../services/historyService');
 const priceService = require('../services/priceService');
 const steamAuth = require('../services/steamAuth');
 
+const STEAM_CDN = 'https://community.akamai.steamstatic.com/economy/image/';
+
+/**
+ * Build image URL from icon_url
+ */
+function buildImageUrl(iconUrl) {
+    if (!iconUrl) return null;
+    return `${STEAM_CDN}${iconUrl}/200fx200f`;
+}
+
+/**
+ * Build icon lookup map from all items
+ */
+function buildIconMap(items) {
+    const map = new Map();
+    for (const item of items) {
+        if (item.icon_url && !map.has(item.market_hash_name)) {
+            map.set(item.market_hash_name, item.icon_url);
+        }
+    }
+    return map;
+}
+
 /**
  * GET / - Main dashboard
  */
 router.get('/', (req, res) => {
     try {
         const items = db.getItems();
+        const iconMap = buildIconMap(items);
 
         // Build per-item data with prices
         const itemsWithPrices = [];
@@ -43,8 +67,7 @@ router.get('/', (req, res) => {
             const itemTotal = (prices.average || 0) * data.quantity;
             totalValue += itemTotal;
 
-            // Steam CDN image
-            const imageUrl = `https://community.akamai.steamstatic.com/economy/image/class/730/${encodeURIComponent(name)}/200fx200f`;
+            const iconUrl = iconMap.get(name) || data.items[0]?.icon_url;
 
             itemsWithPrices.push({
                 market_hash_name: name,
@@ -53,7 +76,7 @@ router.get('/', (req, res) => {
                 float_value: floatVal,
                 wear,
                 rarity,
-                imageUrl,
+                imageUrl: buildImageUrl(iconUrl),
                 prices,
                 total: itemTotal
             });
@@ -74,7 +97,7 @@ router.get('/', (req, res) => {
             const casketGroups = {};
             for (const ci of casketItems) {
                 if (!casketGroups[ci.market_hash_name]) {
-                    casketGroups[ci.market_hash_name] = { quantity: 0, float_value: ci.float_value };
+                    casketGroups[ci.market_hash_name] = { quantity: 0, float_value: ci.float_value, icon_url: ci.icon_url };
                 }
                 casketGroups[ci.market_hash_name].quantity++;
             }
@@ -86,12 +109,15 @@ router.get('/', (req, res) => {
                 const lineTotal = (prices.average || 0) * g.quantity;
                 casketTotal += lineTotal;
 
+                const iconUrl = iconMap.get(name) || g.icon_url;
+
                 casketDetails.push({
                     market_hash_name: name,
                     quantity: g.quantity,
                     float_value: g.float_value,
                     wear,
                     rarity,
+                    imageUrl: buildImageUrl(iconUrl),
                     price: prices.average,
                     total: lineTotal
                 });
@@ -112,12 +138,12 @@ router.get('/', (req, res) => {
         storageUnits.sort((a, b) => b.total_value - a.total_value);
 
         // Main inventory (no casket_id)
-        const mainItems = items.filter(i => !i.casket_id);
+        const mainItemsList = items.filter(i => !i.casket_id);
         let mainTotal = 0;
         const mainGroups = {};
-        for (const mi of mainItems) {
+        for (const mi of mainItemsList) {
             if (!mainGroups[mi.market_hash_name]) {
-                mainGroups[mi.market_hash_name] = { quantity: 0, float_value: mi.float_value };
+                mainGroups[mi.market_hash_name] = { quantity: 0, float_value: mi.float_value, icon_url: mi.icon_url };
             }
             mainGroups[mi.market_hash_name].quantity++;
         }
@@ -128,12 +154,14 @@ router.get('/', (req, res) => {
             const wear = priceService.getWearLevel(g.float_value);
             const lineTotal = (prices.average || 0) * g.quantity;
             mainTotal += lineTotal;
+            const iconUrl = iconMap.get(name) || g.icon_url;
             mainDetails.push({
                 market_hash_name: name,
                 quantity: g.quantity,
                 float_value: g.float_value,
                 wear,
                 rarity,
+                imageUrl: buildImageUrl(iconUrl),
                 price: prices.average,
                 total: lineTotal
             });
@@ -165,7 +193,7 @@ router.get('/', (req, res) => {
             historyData,
             priceAlerts,
             storageUnits,
-            mainInventory: { items: mainDetails, total: mainTotal, count: mainItems.length },
+            mainInventory: { items: mainDetails, total: mainTotal, count: mainItemsList.length },
             lastRefresh: inventoryService.getLastRefresh(),
             isRefreshing: inventoryService.isRefreshInProgress(),
             status: steamAuth.getStatus(),
@@ -208,7 +236,7 @@ router.post('/refresh', async (req, res) => {
 router.get('/export', (req, res) => {
     try {
         const items = db.getItems();
-        const headers = ['Item', 'Qty', 'Storage Unit', 'Float', 'Steam Price €', 'Total €'];
+        const headers = ['Item', 'Qty', 'Storage Unit', 'Float', 'Steam Price EUR', 'Total EUR'];
         const grouped = {};
         for (const item of items) {
             const key = `${item.market_hash_name}__${item.casket_id || 'main'}`;

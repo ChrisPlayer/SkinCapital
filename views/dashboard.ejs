@@ -114,22 +114,6 @@
             border-color: rgba(136, 71, 255, 0.4);
         }
 
-        .shimmer {
-            animation: shimmer 2s infinite;
-            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.03), transparent);
-            background-size: 200% 100%;
-        }
-
-        @keyframes shimmer {
-            0% {
-                background-position: -200% 0;
-            }
-
-            100% {
-                background-position: 200% 0;
-            }
-        }
-
         .fade-in {
             animation: fadeIn 0.4s ease;
         }
@@ -146,9 +130,9 @@
             }
         }
 
-        .item-image {
-            width: 80px;
-            height: 60px;
+        .item-img {
+            width: 72px;
+            height: 54px;
             object-fit: contain;
             filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.5));
         }
@@ -197,9 +181,7 @@
                 </div>
                 <div class="flex items-center gap-4">
                     <div class="text-right hidden sm:block">
-                        <p class="text-2xl font-extrabold text-white tracking-tight">€<%=
-                                totalValue.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2
-                                }) %>
+                        <p class="text-2xl font-extrabold text-white tracking-tight">€<%= totalValue.toFixed(2) %>
                         </p>
                         <p class="text-[11px] text-gray-500">
                             <%= totalItems %> items • Steam Market
@@ -249,17 +231,15 @@
 
                 <!-- KPI Cards -->
                 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6 fade-in">
-                    <!-- Total Items -->
                     <div class="glass rounded-2xl p-5 glass-hover">
                         <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Items Total</p>
                         <p class="text-3xl font-extrabold text-white">
-                            <%= totalItems.toLocaleString() %>
+                            <%= totalItems %>
                         </p>
                         <p class="text-xs text-gray-500 mt-1">
                             <%= uniqueItems %> uniques
                         </p>
                     </div>
-                    <!-- Storage Units -->
                     <div class="glass rounded-2xl p-5 glass-hover">
                         <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Storage Units</p>
                         <p class="text-3xl font-extrabold text-cs-purple">
@@ -269,15 +249,12 @@
                             <%= totalItems - mainInventory.count %> items stockés
                         </p>
                     </div>
-                    <!-- Total Value -->
                     <div class="glass rounded-2xl p-5 glass-hover">
                         <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Valeur Totale</p>
-                        <p class="text-3xl font-extrabold text-cs-orange">€<%= totalValue.toLocaleString('fr-FR', {
-                                minimumFractionDigits: 2, maximumFractionDigits: 2 }) %>
+                        <p class="text-3xl font-extrabold text-cs-orange">€<%= totalValue.toFixed(2) %>
                         </p>
                         <p class="text-xs text-gray-500 mt-1">Steam Market</p>
                     </div>
-                    <!-- 24h Change -->
                     <div class="glass rounded-2xl p-5 glass-hover">
                         <p class="text-xs text-gray-500 uppercase tracking-wider mb-2">Évolution 24h</p>
                         <% if (change24h.hasData) { %>
@@ -324,16 +301,15 @@
                     </a>
                     <a href="?tab=main&days=<%= days %>"
                         class="px-5 py-3 text-sm font-medium border-b-2 transition-all rounded-t-lg <%= tab === 'main' ? 'tab-active' : 'tab-inactive' %>">
-                        🎒 Inventaire Principal (<%= mainInventory.count %>)
+                        🎒 Inventaire (<%= mainInventory.count %>)
                     </a>
                 </div>
 
-                <!-- TAB: Overview (all items) -->
+                <!-- ============ TAB: Overview ============ -->
                 <% if (tab==='overview' ) { %>
                     <div class="fade-in">
-                        <!-- Search -->
-                        <div class="mb-4 flex gap-3">
-                            <div class="relative flex-1 max-w-sm">
+                        <div class="mb-4">
+                            <div class="relative max-w-sm">
                                 <input type="text" id="searchInput" placeholder="Rechercher un item..."
                                     class="w-full px-4 py-2.5 pl-10 bg-cs-surface border border-white/5 rounded-xl text-sm focus:outline-none focus:border-cs-orange/50 transition-colors">
                                 <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none"
@@ -344,20 +320,20 @@
                             </div>
                         </div>
 
-                        <!-- Item Grid -->
                         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" id="itemsGrid">
-                            <% items.forEach(item=> { %>
+                            <% items.forEach(function(item) { %>
                                 <div class="glass rounded-xl p-4 item-card glass-hover"
                                     data-name="<%= item.market_hash_name.toLowerCase() %>">
-                                    <div class="flex gap-4">
-                                        <!-- Item Image -->
+                                    <div class="flex gap-3">
                                         <div
-                                            class="flex-shrink-0 w-20 h-16 rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
-                                            <img src="https://steamcommunity.com/economy/image/class/730/<%= encodeURIComponent(item.market_hash_name) %>/200fx200f"
-                                                alt="<%= item.market_hash_name %>" class="item-image" loading="lazy"
-                                                onerror="this.onerror=null; this.src=''; this.style.display='none'; this.parentElement.innerHTML='<span class=\'text-2xl\'>🔫</span>'">
+                                            class="flex-shrink-0 w-[72px] h-[54px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
+                                            <% if (item.imageUrl) { %>
+                                                <img src="<%= item.imageUrl %>" alt="" class="item-img" loading="lazy"
+                                                    onerror="this.onerror=null;this.style.display='none';this.parentElement.innerHTML='<span class=\'text-2xl\'>🔫</span>'">
+                                                <% } else { %>
+                                                    <span class="text-2xl">🔫</span>
+                                                    <% } %>
                                         </div>
-                                        <!-- Item Info -->
                                         <div class="flex-1 min-w-0">
                                             <div class="flex items-start justify-between gap-2">
                                                 <div class="min-w-0">
@@ -365,42 +341,38 @@
                                                         title="<%= item.market_hash_name %>">
                                                         <%= item.market_hash_name %>
                                                     </p>
-                                                    <div class="flex items-center gap-2 mt-1">
+                                                    <div class="flex items-center gap-2 mt-1 flex-wrap">
                                                         <span class="badge"
-                                                            style="background: <%= item.rarity.bg %>; color: <%= item.rarity.color %>">
+                                                            style="background:<%= item.rarity.bg %>;color:<%= item.rarity.color %>">
                                                             <%= item.rarity.name %>
                                                         </span>
                                                         <% if (item.quantity> 1) { %>
-                                                            <span class="badge bg-white/5 text-gray-400">x<%=
+                                                            <span class="badge bg-white/10 text-gray-300">x<%=
                                                                     item.quantity %></span>
                                                             <% } %>
                                                                 <% if (item.casket_ids.length> 0) { %>
                                                                     <span
                                                                         class="badge bg-cs-purple/15 text-cs-purple">📦
-                                                                        <%= item.casket_ids.length %>
-                                                                    </span>
+                                                                        <%= item.casket_ids.length %></span>
                                                                     <% } %>
                                                     </div>
                                                 </div>
                                                 <div class="text-right flex-shrink-0">
-                                                    <p class="text-sm font-bold text-cs-orange">€<%=
-                                                            item.total.toFixed(2) %>
+                                                    <p class="text-sm font-bold text-cs-orange">€<%= item.prices.steam ?
+                                                            item.prices.steam.toFixed(2) : '—' %>
                                                     </p>
-                                                    <% if (item.prices.steam) { %>
-                                                        <p class="text-[11px] text-gray-500">€<%=
-                                                                item.prices.steam.toFixed(2) %>/u</p>
-                                                        <% } else { %>
-                                                            <p class="text-[11px] text-gray-600">—</p>
-                                                            <% } %>
+                                                    <% if (item.quantity> 1 && item.total > 0) { %>
+                                                        <p class="text-[10px] text-gray-500">Total: €<%=
+                                                                item.total.toFixed(2) %>
+                                                        </p>
+                                                        <% } %>
                                                 </div>
                                             </div>
-                                            <!-- Float Bar -->
                                             <% if (item.float_value) { %>
                                                 <div class="mt-2">
                                                     <div
                                                         class="flex items-center justify-between text-[10px] text-gray-500 mb-0.5">
-                                                        <span
-                                                            style="color: <%= item.wear ? item.wear.color : '#999' %>">
+                                                        <span style="color:<%= item.wear ? item.wear.color : '#999' %>">
                                                             <%= item.wear ? item.wear.name : '' %>
                                                         </span>
                                                         <span class="font-mono">
@@ -409,7 +381,7 @@
                                                     </div>
                                                     <div class="float-bar">
                                                         <div class="float-marker"
-                                                            style="left: <%= (item.float_value * 100) %>%"></div>
+                                                            style="left:<%= (item.float_value * 100) %>%"></div>
                                                     </div>
                                                 </div>
                                                 <% } %>
@@ -419,43 +391,40 @@
                                 <% }) %>
                         </div>
 
-                        <!-- Pagination -->
                         <% if (pagination.totalPages> 1) { %>
                             <div class="flex items-center justify-center gap-2 mt-6">
-                                <% if (pagination.page> 1) { %>
-                                    <a href="?page=<%= pagination.page - 1 %>&days=<%= days %>&tab=overview"
-                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10 transition-colors">←</a>
+                                <% if (pagination.page> 1) { %><a
+                                        href="?page=<%= pagination.page - 1 %>&days=<%= days %>&tab=overview"
+                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10">←</a>
                                     <% } %>
-                                        <% for (let p=Math.max(1, pagination.page - 2); p
+                                        <% for (var p=Math.max(1, pagination.page - 2); p
                                             <=Math.min(pagination.totalPages, pagination.page + 2); p++) { %>
                                             <a href="?page=<%= p %>&days=<%= days %>&tab=overview"
-                                                class="px-3 py-1.5 text-sm rounded-lg transition-colors <%= p === pagination.page ? 'bg-cs-orange text-white' : 'bg-white/5 hover:bg-white/10' %>">
+                                                class="px-3 py-1.5 text-sm rounded-lg <%= p === pagination.page ? 'bg-cs-orange text-white' : 'bg-white/5 hover:bg-white/10' %>">
                                                 <%= p %>
                                             </a>
                                             <% } %>
-                                                <% if (pagination.page < pagination.totalPages) { %>
-                                                    <a href="?page=<%= pagination.page + 1 %>&days=<%= days %>&tab=overview"
-                                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10 transition-colors">→</a>
+                                                <% if (pagination.page < pagination.totalPages) { %><a
+                                                        href="?page=<%= pagination.page + 1 %>&days=<%= days %>&tab=overview"
+                                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10">→</a>
                                                     <% } %>
                             </div>
                             <% } %>
                     </div>
                     <% } %>
 
-                        <!-- TAB: Storage Units -->
+                        <!-- ============ TAB: Storage Units ============ -->
                         <% if (tab==='caskets' ) { %>
                             <div class="fade-in space-y-4">
-                                <!-- Storage Units Summary Cards -->
-                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
-                                    <% storageUnits.forEach((su, idx)=> { %>
+                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                    <% storageUnits.forEach(function(su, idx) { %>
                                         <div class="glass rounded-2xl p-5 casket-card border border-white/5 cursor-pointer"
                                             onclick="toggleCasket('<%= su.casket_id %>')">
                                             <div class="flex items-center justify-between mb-3">
                                                 <div class="flex items-center gap-3">
                                                     <div
-                                                        class="w-10 h-10 rounded-xl bg-cs-purple/20 flex items-center justify-center">
-                                                        <span class="text-lg">🗄️</span>
-                                                    </div>
+                                                        class="w-10 h-10 rounded-xl bg-cs-purple/20 flex items-center justify-center text-lg">
+                                                        🗄️</div>
                                                     <div>
                                                         <p class="text-sm font-semibold text-white">Storage Unit #<%=
                                                                 idx + 1 %>
@@ -469,53 +438,66 @@
                                                     <p class="text-lg font-bold text-cs-orange">€<%=
                                                             su.total_value.toFixed(2) %>
                                                     </p>
+                                                    <p class="text-[10px] text-gray-500">
+                                                        <%= su.item_count %> items
+                                                    </p>
                                                 </div>
                                             </div>
                                             <div class="flex items-center justify-between text-xs text-gray-400">
                                                 <span>
-                                                    <%= su.item_count %> items (<%= su.unique_items %> uniques)
+                                                    <%= su.unique_items %> items uniques
                                                 </span>
-                                                <span id="toggle-<%= su.casket_id %>" class="text-cs-purple">▼
-                                                    Détails</span>
+                                                <span id="toggle-<%= su.casket_id %>"
+                                                    class="text-cs-purple font-medium">▼ Détails</span>
                                             </div>
-                                            <!-- Expanded detail -->
+                                            <!-- Expanded items -->
                                             <div id="casket-<%= su.casket_id %>"
-                                                class="hidden mt-4 pt-4 border-t border-white/5 space-y-2 max-h-96 overflow-y-auto">
-                                                <% su.items.forEach(ci=> { %>
+                                                class="hidden mt-4 pt-4 border-t border-white/5 space-y-1 max-h-[400px] overflow-y-auto">
+                                                <% su.items.forEach(function(ci) { %>
                                                     <div
-                                                        class="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-white/3">
-                                                        <div class="flex items-center gap-2 min-w-0 flex-1">
-                                                            <span class="badge flex-shrink-0"
-                                                                style="background: <%= ci.rarity.bg %>; color: <%= ci.rarity.color %>">
-                                                                <%= ci.rarity.name.substring(0,3) %>
-                                                            </span>
-                                                            <span class="text-xs text-gray-300 truncate"
-                                                                title="<%= ci.market_hash_name %>">
-                                                                <%= ci.market_hash_name %>
-                                                            </span>
-                                                            <% if (ci.quantity> 1) { %>
-                                                                <span class="text-[10px] text-gray-500">x<%= ci.quantity
-                                                                        %></span>
+                                                        class="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/5">
+                                                        <% if (ci.imageUrl) { %>
+                                                            <img src="<%= ci.imageUrl %>" alt=""
+                                                                class="w-10 h-8 object-contain flex-shrink-0"
+                                                                loading="lazy" onerror="this.style.display='none'">
+                                                            <% } else { %>
+                                                                <span
+                                                                    class="text-sm flex-shrink-0 w-10 text-center">🔫</span>
                                                                 <% } %>
-                                                        </div>
-                                                        <div class="flex items-center gap-3 flex-shrink-0">
-                                                            <% if (ci.float_value) { %>
-                                                                <span class="text-[10px] font-mono"
-                                                                    style="color: <%= ci.wear ? ci.wear.color : '#666' %>">
-                                                                    <%= ci.wear ? ci.wear.short : '' %>
-                                                                </span>
-                                                                <% } %>
-                                                                    <span class="text-xs font-semibold text-white">
-                                                                        <%= ci.price ? '€' + ci.price.toFixed(2) : '—'
-                                                                            %>
-                                                                    </span>
-                                                                    <% if (ci.quantity> 1) { %>
-                                                                        <span
-                                                                            class="text-[10px] text-cs-orange font-bold">€
-                                                                            <%= ci.total.toFixed(2) %>
-                                                                        </span>
-                                                                        <% } %>
-                                                        </div>
+                                                                    <div class="flex-1 min-w-0">
+                                                                        <p class="text-xs text-gray-300 truncate"
+                                                                            title="<%= ci.market_hash_name %>">
+                                                                            <%= ci.market_hash_name %>
+                                                                        </p>
+                                                                        <div class="flex items-center gap-1.5">
+                                                                            <span class="badge"
+                                                                                style="background:<%= ci.rarity.bg %>;color:<%= ci.rarity.color %>">
+                                                                                <%= ci.rarity.name.substring(0, 3) %>
+                                                                            </span>
+                                                                            <% if (ci.wear) { %>
+                                                                                <span class="text-[10px] font-mono"
+                                                                                    style="color:<%= ci.wear.color %>">
+                                                                                    <%= ci.wear.short %>
+                                                                                </span>
+                                                                                <% } %>
+                                                                                    <% if (ci.quantity> 1) { %>
+                                                                                        <span
+                                                                                            class="text-[10px] text-gray-500">x
+                                                                                            <%= ci.quantity %></span>
+                                                                                        <% } %>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div class="text-right flex-shrink-0">
+                                                                        <p class="text-xs font-semibold text-white">
+                                                                            <%= ci.price ? '€' + ci.price.toFixed(2)
+                                                                                : '—' %>
+                                                                        </p>
+                                                                        <% if (ci.quantity> 1 && ci.total > 0) { %>
+                                                                            <p class="text-[10px] text-cs-orange">€<%=
+                                                                                    ci.total.toFixed(2) %>
+                                                                            </p>
+                                                                            <% } %>
+                                                                    </div>
                                                     </div>
                                                     <% }) %>
                                             </div>
@@ -525,7 +507,7 @@
                             </div>
                             <% } %>
 
-                                <!-- TAB: Main Inventory -->
+                                <!-- ============ TAB: Main Inventory ============ -->
                                 <% if (tab==='main' ) { %>
                                     <div class="fade-in">
                                         <div class="glass rounded-2xl p-5 mb-4">
@@ -543,14 +525,18 @@
                                             </div>
                                         </div>
                                         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                                            <% mainInventory.items.forEach(mi=> { %>
+                                            <% mainInventory.items.forEach(function(mi) { %>
                                                 <div class="glass rounded-xl p-4 item-card glass-hover">
                                                     <div class="flex gap-3">
                                                         <div
-                                                            class="flex-shrink-0 w-16 h-12 rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
-                                                            <img src="https://steamcommunity.com/economy/image/class/730/<%= encodeURIComponent(mi.market_hash_name) %>/150fx150f"
-                                                                alt="" class="w-14 h-10 object-contain" loading="lazy"
-                                                                onerror="this.onerror=null; this.src=''; this.style.display='none'; this.parentElement.innerHTML='<span class=\'text-xl\'>🔫</span>'">
+                                                            class="flex-shrink-0 w-[72px] h-[54px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
+                                                            <% if (mi.imageUrl) { %>
+                                                                <img src="<%= mi.imageUrl %>" alt="" class="item-img"
+                                                                    loading="lazy"
+                                                                    onerror="this.onerror=null;this.style.display='none';this.parentElement.innerHTML='<span class=\'text-xl\'>🔫</span>'">
+                                                                <% } else { %>
+                                                                    <span class="text-xl">🔫</span>
+                                                                    <% } %>
                                                         </div>
                                                         <div class="flex-1 min-w-0">
                                                             <div class="flex items-start justify-between gap-2">
@@ -559,32 +545,33 @@
                                                                         class="text-xs font-semibold text-white truncate">
                                                                         <%= mi.market_hash_name %>
                                                                     </p>
-                                                                    <div class="flex items-center gap-1.5 mt-0.5">
+                                                                    <div
+                                                                        class="flex items-center gap-1.5 mt-0.5 flex-wrap">
                                                                         <span class="badge"
-                                                                            style="background: <%= mi.rarity.bg %>; color: <%= mi.rarity.color %>">
+                                                                            style="background:<%= mi.rarity.bg %>;color:<%= mi.rarity.color %>">
                                                                             <%= mi.rarity.name %>
                                                                         </span>
                                                                         <% if (mi.wear) { %>
                                                                             <span class="text-[10px] font-mono"
-                                                                                style="color: <%= mi.wear.color %>">
+                                                                                style="color:<%= mi.wear.color %>">
                                                                                 <%= mi.wear.short %>
                                                                             </span>
                                                                             <% } %>
                                                                                 <% if (mi.quantity> 1) { %>
                                                                                     <span
-                                                                                        class="badge bg-white/5 text-gray-400">x
-                                                                                        <%= mi.quantity %>
-                                                                                    </span>
+                                                                                        class="badge bg-white/10 text-gray-300">x
+                                                                                        <%= mi.quantity %></span>
                                                                                     <% } %>
                                                                     </div>
                                                                 </div>
                                                                 <div class="text-right flex-shrink-0">
                                                                     <p class="text-sm font-bold text-cs-orange">€<%=
-                                                                            mi.total.toFixed(2) %>
+                                                                            mi.price ? mi.price.toFixed(2) : '—' %>
                                                                     </p>
-                                                                    <% if (mi.price) { %>
-                                                                        <p class="text-[10px] text-gray-500">€<%=
-                                                                                mi.price.toFixed(2) %>/u</p>
+                                                                    <% if (mi.quantity> 1 && mi.total > 0) { %>
+                                                                        <p class="text-[10px] text-gray-500">Total: €<%=
+                                                                                mi.total.toFixed(2) %>
+                                                                        </p>
                                                                         <% } %>
                                                                 </div>
                                                             </div>
@@ -592,7 +579,7 @@
                                                                 <div class="mt-1.5">
                                                                     <div class="float-bar">
                                                                         <div class="float-marker"
-                                                                            style="left: <%= (mi.float_value * 100) %>%">
+                                                                            style="left:<%= (mi.float_value * 100) %>%">
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -609,11 +596,10 @@
                                         <% if (priceAlerts.length> 0) { %>
                                             <div class="glass rounded-2xl p-5 mt-6 fade-in">
                                                 <h3
-                                                    class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                                    <span class="text-yellow-400">⚡</span> Alertes de prix
-                                                </h3>
+                                                    class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                                                    ⚡ Alertes de prix</h3>
                                                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                                                    <% priceAlerts.slice(0, 6).forEach(alert=> { %>
+                                                    <% priceAlerts.slice(0, 6).forEach(function(alert) { %>
                                                         <div
                                                             class="flex items-center justify-between px-3 py-2 rounded-lg bg-black/20 border-l-2 <%= alert.direction === 'up' ? 'border-green-500' : 'border-red-500' %>">
                                                             <span class="text-xs truncate flex-1 mr-2">
@@ -633,26 +619,18 @@
 
     <script>
         // Chart
-        const historyData = <% - JSON.stringify(historyData) %>;
-        const ctx = document.getElementById('historyChart');
+        var historyData = <% - JSON.stringify(historyData) %>;
+        var ctx = document.getElementById('historyChart');
         if (historyData.length > 0) {
             new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: historyData.map(d => new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })),
+                    labels: historyData.map(function (d) { return new Date(d.date).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }); }),
                     datasets: [{
                         label: 'Valeur (€)',
-                        data: historyData.map(d => d.value),
+                        data: historyData.map(function (d) { return d.value; }),
                         borderColor: '#DE9B35',
-                        backgroundColor: (context) => {
-                            const chart = context.chart;
-                            const { ctx, chartArea } = chart;
-                            if (!chartArea) return 'rgba(222, 155, 53, 0.1)';
-                            const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-                            gradient.addColorStop(0, 'rgba(222, 155, 53, 0.2)');
-                            gradient.addColorStop(1, 'rgba(222, 155, 53, 0)');
-                            return gradient;
-                        },
+                        backgroundColor: 'rgba(222, 155, 53, 0.1)',
                         tension: 0.4,
                         fill: true,
                         pointRadius: 2,
@@ -667,14 +645,14 @@
                     plugins: {
                         legend: { display: false },
                         tooltip: {
-                            backgroundColor: 'rgba(10, 14, 20, 0.95)', titleColor: '#fff', bodyColor: '#DE9B35',
+                            backgroundColor: 'rgba(10,14,20,0.95)', titleColor: '#fff', bodyColor: '#DE9B35',
                             borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 12,
-                            callbacks: { label: ctx => '€' + ctx.parsed.y.toLocaleString('fr-FR', { minimumFractionDigits: 2 }) }
+                            callbacks: { label: function (ctx) { return '€' + ctx.parsed.y.toFixed(2); } }
                         }
                     },
                     scales: {
                         x: { grid: { display: false }, ticks: { color: '#374151', font: { size: 10 } } },
-                        y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#374151', font: { size: 10 }, callback: v => '€' + v.toLocaleString() } }
+                        y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#374151', font: { size: 10 }, callback: function (v) { return '€' + v; } } }
                     }
                 }
             });
@@ -683,20 +661,21 @@
         }
 
         // Search
-        const searchInput = document.getElementById('searchInput');
+        var searchInput = document.getElementById('searchInput');
         if (searchInput) {
-            searchInput.addEventListener('input', () => {
-                const q = searchInput.value.toLowerCase();
-                document.querySelectorAll('#itemsGrid > div').forEach(card => {
-                    card.style.display = card.dataset.name?.includes(q) ? '' : 'none';
-                });
+            searchInput.addEventListener('input', function () {
+                var q = searchInput.value.toLowerCase();
+                var cards = document.querySelectorAll('#itemsGrid > div');
+                for (var i = 0; i < cards.length; i++) {
+                    cards[i].style.display = (cards[i].dataset.name || '').indexOf(q) >= 0 ? '' : 'none';
+                }
             });
         }
 
         // Casket toggle
         function toggleCasket(id) {
-            const el = document.getElementById('casket-' + id);
-            const toggle = document.getElementById('toggle-' + id);
+            var el = document.getElementById('casket-' + id);
+            var toggle = document.getElementById('toggle-' + id);
             if (el) {
                 el.classList.toggle('hidden');
                 toggle.textContent = el.classList.contains('hidden') ? '▼ Détails' : '▲ Réduire';
@@ -705,8 +684,8 @@
 
         // Auto-refresh poll
         <% if (isRefreshing) { %>
-            setInterval(() => {
-                fetch('/dashboard/api/status').then(r => r.json()).then(d => { if (!d.isRefreshing) location.reload(); });
+            setInterval(function () {
+                fetch('/dashboard/api/status').then(function (r) { return r.json(); }).then(function (d) { if (!d.isRefreshing) location.reload(); });
             }, 5000);
         <% } %>
     </script>

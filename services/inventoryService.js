@@ -5,6 +5,9 @@ const priceService = require('./priceService');
 let lastRefresh = null;
 let isRefreshing = false;
 
+// Global cache: market_hash_name -> icon_url (from Steam Community API)
+const iconCache = new Map();
+
 /**
  * Get all Storage Units (caskets) from the inventory
  * @returns {Promise<Array>} Array of casket objects
@@ -132,7 +135,15 @@ async function getAllStorageUnitItems() {
     const caskets = await getStorageUnits();
     const allItems = [];
 
-    for (const casket of caskets) {
+    // Filter out empty caskets to save time
+    const nonEmptyCaskets = caskets.filter(c => c.item_count > 0);
+    const skipped = caskets.length - nonEmptyCaskets.length;
+    if (skipped > 0) {
+        console.log(`[Inventory] Skipping ${skipped} empty Storage Units`);
+    }
+    console.log(`[Inventory] Loading ${nonEmptyCaskets.length} non-empty Storage Units...`);
+
+    for (const casket of nonEmptyCaskets) {
         // Rate limit: 1 second between GC calls
         await sleep(1000);
 
@@ -169,15 +180,22 @@ async function getMainInventory() {
                 return;
             }
 
-            const items = inventory.map(item => ({
-                market_hash_name: item.market_hash_name,
-                asset_id: item.assetid,
-                casket_id: null,
-                float_value: null,
-                paint_seed: null
-            }));
+            const items = inventory.map(item => {
+                // Cache icon_url for use by storage unit items
+                if (item.icon_url) {
+                    iconCache.set(item.market_hash_name, item.icon_url);
+                }
+                return {
+                    market_hash_name: item.market_hash_name,
+                    asset_id: item.assetid,
+                    casket_id: null,
+                    float_value: null,
+                    paint_seed: null,
+                    icon_url: item.icon_url || null
+                };
+            });
 
-            console.log(`[Inventory] Main inventory: ${items.length} items`);
+            console.log(`[Inventory] Main inventory: ${items.length} items (${iconCache.size} icons cached)`);
             resolve(items);
         });
     });
@@ -188,8 +206,16 @@ async function getMainInventory() {
  * @returns {Promise<Array>} All inventory items
  */
 async function getAllInventory() {
-    const storageItems = await getAllStorageUnitItems();
+    // Fetch main inventory FIRST to populate icon cache
     const mainItems = await getMainInventory();
+    const storageItems = await getAllStorageUnitItems();
+
+    // Apply icon_url from cache to storage unit items
+    for (const item of storageItems) {
+        if (!item.icon_url && iconCache.has(item.market_hash_name)) {
+            item.icon_url = iconCache.get(item.market_hash_name);
+        }
+    }
 
     // Merge, avoiding duplicates based on asset_id
     const allItems = [...storageItems];

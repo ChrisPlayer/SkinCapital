@@ -1,0 +1,5 @@
+node_modules/
+.env
+inventory.db
+.DS_Store
+*.log

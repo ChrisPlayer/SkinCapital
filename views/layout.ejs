@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="CS2 Inventory Tracker - Monitor your Counter-Strike 2 inventory value in real-time">
+    <title>CS2 Inventory Tracker</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cs: {
+                            orange: '#DE9B35',
+                            purple: '#8847FF',
+                            pink: '#D32CE6',
+                            red: '#EB4B4B',
+                            blue: '#5E98D9',
+                            gray: '#1B2838',
+                            dark: '#0E1419'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background: linear-gradient(135deg, #0E1419 0%, #1B2838 50%, #0E1419 100%);
+            min-height: 100vh;
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1B2838;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #3D4F5F;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5E98D9;
+        }
+        
+        /* Glassmorphism cards */
+        .glass-card {
+            background: rgba(27, 40, 56, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Gradient text */
+        .gradient-text {
+            background: linear-gradient(135deg, #DE9B35, #D32CE6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        /* Pulse animation for refresh */
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Table row hover */
+        .table-row-hover:hover {
+            background: rgba(94, 152, 217, 0.1);
+        }
+    </style>
+</head>
+<body class="text-gray-100">
+    <%- body %>
+    
+    <script src="/js/chart-config.js"></script>
+</body>
+</html>

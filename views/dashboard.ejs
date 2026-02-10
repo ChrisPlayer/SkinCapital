@@ -106,12 +106,29 @@
             border-color: rgba(255, 255, 255, 0.1);
         }
 
-        .casket-card {
+        .folder-card {
             transition: all 0.3s ease;
+            cursor: pointer;
         }
 
-        .casket-card:hover {
+        .folder-card:hover {
             border-color: rgba(136, 71, 255, 0.4);
+            box-shadow: 0 4px 20px rgba(136, 71, 255, 0.1);
+        }
+
+        .folder-card.open {
+            border-color: rgba(136, 71, 255, 0.5);
+        }
+
+        .folder-contents {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s ease;
+        }
+
+        .folder-contents.open {
+            max-height: 2000px;
+            overflow-y: auto;
         }
 
         .fade-in {
@@ -291,10 +308,6 @@
 
                 <!-- Tabs -->
                 <div class="flex gap-1 mb-6 border-b border-white/5 fade-in">
-                    <a href="?tab=overview&days=<%= days %>"
-                        class="px-5 py-3 text-sm font-medium border-b-2 transition-all rounded-t-lg <%= tab === 'overview' ? 'tab-active' : 'tab-inactive' %>">
-                        📦 Tous les Items
-                    </a>
                     <a href="?tab=caskets&days=<%= days %>"
                         class="px-5 py-3 text-sm font-medium border-b-2 transition-all rounded-t-lg <%= tab === 'caskets' ? 'tab-active' : 'tab-inactive' %>">
                         🗄️ Storage Units (<%= storageUnits.length %>)
@@ -303,203 +316,202 @@
                         class="px-5 py-3 text-sm font-medium border-b-2 transition-all rounded-t-lg <%= tab === 'main' ? 'tab-active' : 'tab-inactive' %>">
                         🎒 Inventaire (<%= mainInventory.count %>)
                     </a>
+                    <a href="?tab=overview&days=<%= days %>"
+                        class="px-5 py-3 text-sm font-medium border-b-2 transition-all rounded-t-lg <%= tab === 'overview' ? 'tab-active' : 'tab-inactive' %>">
+                        📦 Tous les Items
+                    </a>
                 </div>
 
-                <!-- ============ TAB: Overview ============ -->
-                <% if (tab==='overview' ) { %>
-                    <div class="fade-in">
-                        <div class="mb-4">
-                            <div class="relative max-w-sm">
-                                <input type="text" id="searchInput" placeholder="Rechercher un item..."
-                                    class="w-full px-4 py-2.5 pl-10 bg-cs-surface border border-white/5 rounded-xl text-sm focus:outline-none focus:border-cs-orange/50 transition-colors">
-                                <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" fill="none"
-                                    stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
-                            </div>
-                        </div>
-
-                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3" id="itemsGrid">
-                            <% items.forEach(function(item) { %>
-                                <div class="glass rounded-xl p-4 item-card glass-hover"
-                                    data-name="<%= item.market_hash_name.toLowerCase() %>">
-                                    <div class="flex gap-3">
-                                        <div
-                                            class="flex-shrink-0 w-[72px] h-[54px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
-                                            <% if (item.imageUrl) { %>
-                                                <img src="<%= item.imageUrl %>" alt="" class="item-img" loading="lazy"
-                                                    onerror="this.onerror=null;this.style.display='none';this.parentElement.innerHTML='<span class=\'text-2xl\'>🔫</span>'">
-                                                <% } else { %>
-                                                    <span class="text-2xl">🔫</span>
-                                                    <% } %>
-                                        </div>
-                                        <div class="flex-1 min-w-0">
-                                            <div class="flex items-start justify-between gap-2">
-                                                <div class="min-w-0">
-                                                    <p class="text-sm font-semibold text-white truncate"
-                                                        title="<%= item.market_hash_name %>">
-                                                        <%= item.market_hash_name %>
-                                                    </p>
-                                                    <div class="flex items-center gap-2 mt-1 flex-wrap">
-                                                        <span class="badge"
-                                                            style="background:<%= item.rarity.bg %>;color:<%= item.rarity.color %>">
-                                                            <%= item.rarity.name %>
-                                                        </span>
-                                                        <% if (item.quantity> 1) { %>
-                                                            <span class="badge bg-white/10 text-gray-300">x<%=
-                                                                    item.quantity %></span>
-                                                            <% } %>
-                                                                <% if (item.casket_ids.length> 0) { %>
-                                                                    <span
-                                                                        class="badge bg-cs-purple/15 text-cs-purple">📦
-                                                                        <%= item.casket_ids.length %></span>
-                                                                    <% } %>
-                                                    </div>
+                <!-- ============ TAB: Storage Units (Folders) ============ -->
+                <% if (tab==='caskets' ) { %>
+                    <div class="fade-in space-y-3">
+                        <% if (storageUnits.length===0) { %>
+                            <div class="glass rounded-2xl p-8 text-center text-gray-500">Aucune Storage Unit avec des
+                                items</div>
+                            <% } %>
+                                <% storageUnits.forEach(function(su, idx) { %>
+                                    <div class="glass rounded-2xl folder-card border border-white/5"
+                                        id="folder-<%= su.casket_id %>">
+                                        <!-- Folder Header (clickable) -->
+                                        <div class="p-5 flex items-center justify-between"
+                                            onclick="toggleFolder('<%= su.casket_id %>')">
+                                            <div class="flex items-center gap-4">
+                                                <div
+                                                    class="w-12 h-12 rounded-xl bg-gradient-to-br from-cs-purple/30 to-cs-pink/20 flex items-center justify-center text-xl border border-cs-purple/20">
+                                                    <span id="folder-icon-<%= su.casket_id %>">📁</span>
                                                 </div>
-                                                <div class="text-right flex-shrink-0">
-                                                    <p class="text-sm font-bold text-cs-orange">€<%= item.prices.steam ?
-                                                            item.prices.steam.toFixed(2) : '—' %>
+                                                <div>
+                                                    <p class="text-base font-bold text-white">Storage Unit #<%= idx + 1
+                                                            %>
                                                     </p>
-                                                    <% if (item.quantity> 1 && item.total > 0) { %>
-                                                        <p class="text-[10px] text-gray-500">Total: €<%=
-                                                                item.total.toFixed(2) %>
-                                                        </p>
-                                                        <% } %>
+                                                    <p class="text-xs text-gray-500 mt-0.5">
+                                                        <span class="font-mono text-gray-600">...<%= su.short_id %>
+                                                                </span>
+                                                        <span class="mx-2 text-gray-700">•</span>
+                                                        <span>
+                                                            <%= su.item_count %> items
+                                                        </span>
+                                                        <span class="mx-2 text-gray-700">•</span>
+                                                        <span>
+                                                            <%= su.unique_items %> uniques
+                                                        </span>
+                                                    </p>
                                                 </div>
                                             </div>
-                                            <% if (item.float_value) { %>
-                                                <div class="mt-2">
-                                                    <div
-                                                        class="flex items-center justify-between text-[10px] text-gray-500 mb-0.5">
-                                                        <span style="color:<%= item.wear ? item.wear.color : '#999' %>">
-                                                            <%= item.wear ? item.wear.name : '' %>
-                                                        </span>
-                                                        <span class="font-mono">
-                                                            <%= item.float_value.toFixed(8) %>
-                                                        </span>
-                                                    </div>
-                                                    <div class="float-bar">
-                                                        <div class="float-marker"
-                                                            style="left:<%= (item.float_value * 100) %>%"></div>
-                                                    </div>
+                                            <div class="flex items-center gap-4">
+                                                <div class="text-right">
+                                                    <p class="text-xl font-extrabold text-cs-orange">€<%=
+                                                            su.total_value.toFixed(2) %>
+                                                    </p>
                                                 </div>
-                                                <% } %>
+                                                <svg id="chevron-<%= su.casket_id %>"
+                                                    class="w-5 h-5 text-gray-500 transition-transform duration-300"
+                                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2" d="M19 9l-7 7-7-7" />
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        <!-- Folder Contents (hidden by default) -->
+                                        <div class="folder-contents" id="contents-<%= su.casket_id %>">
+                                            <div class="border-t border-white/5 px-5 pb-5">
+                                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 pt-4">
+                                                    <% su.items.forEach(function(ci) { %>
+                                                        <div
+                                                            class="flex items-center gap-3 p-3 rounded-xl bg-black/20 hover:bg-black/30 transition-colors item-card">
+                                                            <!-- Image -->
+                                                            <div
+                                                                class="flex-shrink-0 w-14 h-11 rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
+                                                                <% if (ci.imageUrl) { %>
+                                                                    <img src="<%= ci.imageUrl %>" alt=""
+                                                                        class="w-12 h-9 object-contain" loading="lazy"
+                                                                        onerror="this.onerror=null;this.style.display='none';this.parentElement.innerHTML='<span class=\'text-lg\'>🔫</span>'">
+                                                                    <% } else { %>
+                                                                        <span class="text-lg">🔫</span>
+                                                                        <% } %>
+                                                            </div>
+                                                            <!-- Info -->
+                                                            <div class="flex-1 min-w-0">
+                                                                <p class="text-xs font-semibold text-gray-200 truncate"
+                                                                    title="<%= ci.market_hash_name %>">
+                                                                    <%= ci.market_hash_name %>
+                                                                </p>
+                                                                <div class="flex items-center gap-1.5 mt-0.5">
+                                                                    <span class="badge"
+                                                                        style="background:<%= ci.rarity.bg %>;color:<%= ci.rarity.color %>">
+                                                                        <%= ci.rarity.name.length> 6 ?
+                                                                            ci.rarity.name.substring(0,3) :
+                                                                            ci.rarity.name %>
+                                                                    </span>
+                                                                    <% if (ci.wear) { %>
+                                                                        <span class="text-[10px] font-mono"
+                                                                            style="color:<%= ci.wear.color %>">
+                                                                            <%= ci.wear.short %>
+                                                                        </span>
+                                                                        <% } %>
+                                                                            <% if (ci.quantity> 1) { %>
+                                                                                <span
+                                                                                    class="text-[10px] text-gray-400 font-medium">x
+                                                                                    <%= ci.quantity %></span>
+                                                                                <% } %>
+                                                                </div>
+                                                            </div>
+                                                            <!-- Price -->
+                                                            <div class="text-right flex-shrink-0">
+                                                                <p
+                                                                    class="text-xs font-bold <%= ci.price ? 'text-white' : 'text-gray-600' %>">
+                                                                    <%= ci.price ? '€' + ci.price.toFixed(2) : '—' %>
+                                                                </p>
+                                                                <% if (ci.quantity> 1 && ci.total > 0) { %>
+                                                                    <p class="text-[10px] text-cs-orange font-semibold">
+                                                                        €<%= ci.total.toFixed(2) %>
+                                                                    </p>
+                                                                    <% } %>
+                                                            </div>
+                                                        </div>
+                                                        <% }) %>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                                <% }) %>
-                        </div>
-
-                        <% if (pagination.totalPages> 1) { %>
-                            <div class="flex items-center justify-center gap-2 mt-6">
-                                <% if (pagination.page> 1) { %><a
-                                        href="?page=<%= pagination.page - 1 %>&days=<%= days %>&tab=overview"
-                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10">←</a>
-                                    <% } %>
-                                        <% for (var p=Math.max(1, pagination.page - 2); p
-                                            <=Math.min(pagination.totalPages, pagination.page + 2); p++) { %>
-                                            <a href="?page=<%= p %>&days=<%= days %>&tab=overview"
-                                                class="px-3 py-1.5 text-sm rounded-lg <%= p === pagination.page ? 'bg-cs-orange text-white' : 'bg-white/5 hover:bg-white/10' %>">
-                                                <%= p %>
-                                            </a>
-                                            <% } %>
-                                                <% if (pagination.page < pagination.totalPages) { %><a
-                                                        href="?page=<%= pagination.page + 1 %>&days=<%= days %>&tab=overview"
-                                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10">→</a>
-                                                    <% } %>
-                            </div>
-                            <% } %>
+                                    <% }) %>
                     </div>
                     <% } %>
 
-                        <!-- ============ TAB: Storage Units ============ -->
-                        <% if (tab==='caskets' ) { %>
-                            <div class="fade-in space-y-4">
-                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                                    <% storageUnits.forEach(function(su, idx) { %>
-                                        <div class="glass rounded-2xl p-5 casket-card border border-white/5 cursor-pointer"
-                                            onclick="toggleCasket('<%= su.casket_id %>')">
-                                            <div class="flex items-center justify-between mb-3">
-                                                <div class="flex items-center gap-3">
-                                                    <div
-                                                        class="w-10 h-10 rounded-xl bg-cs-purple/20 flex items-center justify-center text-lg">
-                                                        🗄️</div>
-                                                    <div>
-                                                        <p class="text-sm font-semibold text-white">Storage Unit #<%=
-                                                                idx + 1 %>
-                                                        </p>
-                                                        <p class="text-[11px] text-gray-500 font-mono">...<%=
-                                                                su.short_id %>
-                                                        </p>
-                                                    </div>
+                        <!-- ============ TAB: Main Inventory ============ -->
+                        <% if (tab==='main' ) { %>
+                            <div class="fade-in">
+                                <div class="glass rounded-2xl p-5 mb-4">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <p class="text-sm font-semibold text-gray-300">Inventaire Principal</p>
+                                            <p class="text-xs text-gray-500">
+                                                <%= mainInventory.count %> items
+                                            </p>
+                                        </div>
+                                        <p class="text-xl font-bold text-cs-orange">€<%= mainInventory.total.toFixed(2)
+                                                %>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                                    <% mainInventory.items.forEach(function(mi) { %>
+                                        <div class="glass rounded-xl p-4 item-card glass-hover">
+                                            <div class="flex gap-3">
+                                                <div
+                                                    class="flex-shrink-0 w-[72px] h-[54px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
+                                                    <% if (mi.imageUrl) { %>
+                                                        <img src="<%= mi.imageUrl %>" alt="" class="item-img"
+                                                            loading="lazy"
+                                                            onerror="this.onerror=null;this.style.display='none';this.parentElement.innerHTML='<span class=\'text-xl\'>🔫</span>'">
+                                                        <% } else { %>
+                                                            <span class="text-xl">🔫</span>
+                                                            <% } %>
                                                 </div>
-                                                <div class="text-right">
-                                                    <p class="text-lg font-bold text-cs-orange">€<%=
-                                                            su.total_value.toFixed(2) %>
-                                                    </p>
-                                                    <p class="text-[10px] text-gray-500">
-                                                        <%= su.item_count %> items
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <div class="flex items-center justify-between text-xs text-gray-400">
-                                                <span>
-                                                    <%= su.unique_items %> items uniques
-                                                </span>
-                                                <span id="toggle-<%= su.casket_id %>"
-                                                    class="text-cs-purple font-medium">▼ Détails</span>
-                                            </div>
-                                            <!-- Expanded items -->
-                                            <div id="casket-<%= su.casket_id %>"
-                                                class="hidden mt-4 pt-4 border-t border-white/5 space-y-1 max-h-[400px] overflow-y-auto">
-                                                <% su.items.forEach(function(ci) { %>
-                                                    <div
-                                                        class="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-white/5">
-                                                        <% if (ci.imageUrl) { %>
-                                                            <img src="<%= ci.imageUrl %>" alt=""
-                                                                class="w-10 h-8 object-contain flex-shrink-0"
-                                                                loading="lazy" onerror="this.style.display='none'">
-                                                            <% } else { %>
-                                                                <span
-                                                                    class="text-sm flex-shrink-0 w-10 text-center">🔫</span>
-                                                                <% } %>
-                                                                    <div class="flex-1 min-w-0">
-                                                                        <p class="text-xs text-gray-300 truncate"
-                                                                            title="<%= ci.market_hash_name %>">
-                                                                            <%= ci.market_hash_name %>
-                                                                        </p>
-                                                                        <div class="flex items-center gap-1.5">
-                                                                            <span class="badge"
-                                                                                style="background:<%= ci.rarity.bg %>;color:<%= ci.rarity.color %>">
-                                                                                <%= ci.rarity.name.substring(0, 3) %>
-                                                                            </span>
-                                                                            <% if (ci.wear) { %>
-                                                                                <span class="text-[10px] font-mono"
-                                                                                    style="color:<%= ci.wear.color %>">
-                                                                                    <%= ci.wear.short %>
-                                                                                </span>
-                                                                                <% } %>
-                                                                                    <% if (ci.quantity> 1) { %>
-                                                                                        <span
-                                                                                            class="text-[10px] text-gray-500">x
-                                                                                            <%= ci.quantity %></span>
-                                                                                        <% } %>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div class="text-right flex-shrink-0">
-                                                                        <p class="text-xs font-semibold text-white">
-                                                                            <%= ci.price ? '€' + ci.price.toFixed(2)
-                                                                                : '—' %>
-                                                                        </p>
-                                                                        <% if (ci.quantity> 1 && ci.total > 0) { %>
-                                                                            <p class="text-[10px] text-cs-orange">€<%=
-                                                                                    ci.total.toFixed(2) %>
-                                                                            </p>
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="flex items-start justify-between gap-2">
+                                                        <div class="min-w-0">
+                                                            <p class="text-xs font-semibold text-white truncate">
+                                                                <%= mi.market_hash_name %>
+                                                            </p>
+                                                            <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                                <span class="badge"
+                                                                    style="background:<%= mi.rarity.bg %>;color:<%= mi.rarity.color %>">
+                                                                    <%= mi.rarity.name %>
+                                                                </span>
+                                                                <% if (mi.wear) { %>
+                                                                    <span class="text-[10px] font-mono"
+                                                                        style="color:<%= mi.wear.color %>">
+                                                                        <%= mi.wear.short %>
+                                                                    </span>
+                                                                    <% } %>
+                                                                        <% if (mi.quantity> 1) { %>
+                                                                            <span
+                                                                                class="badge bg-white/10 text-gray-300">x
+                                                                                <%= mi.quantity %></span>
                                                                             <% } %>
-                                                                    </div>
+                                                            </div>
+                                                        </div>
+                                                        <div class="text-right flex-shrink-0">
+                                                            <p class="text-sm font-bold text-cs-orange">€<%= mi.price ?
+                                                                    mi.price.toFixed(2) : '—' %>
+                                                            </p>
+                                                            <% if (mi.quantity> 1 && mi.total > 0) { %>
+                                                                <p class="text-[10px] text-gray-500">Total: €<%=
+                                                                        mi.total.toFixed(2) %>
+                                                                </p>
+                                                                <% } %>
+                                                        </div>
                                                     </div>
-                                                    <% }) %>
+                                                    <% if (mi.float_value) { %>
+                                                        <div class="mt-1.5">
+                                                            <div class="float-bar">
+                                                                <div class="float-marker"
+                                                                    style="left:<%= (mi.float_value * 100) %>%"></div>
+                                                            </div>
+                                                        </div>
+                                                        <% } %>
+                                                </div>
                                             </div>
                                         </div>
                                         <% }) %>
@@ -507,79 +519,90 @@
                             </div>
                             <% } %>
 
-                                <!-- ============ TAB: Main Inventory ============ -->
-                                <% if (tab==='main' ) { %>
+                                <!-- ============ TAB: Overview ============ -->
+                                <% if (tab==='overview' ) { %>
                                     <div class="fade-in">
-                                        <div class="glass rounded-2xl p-5 mb-4">
-                                            <div class="flex items-center justify-between">
-                                                <div>
-                                                    <p class="text-sm font-semibold text-gray-300">Inventaire Principal
-                                                    </p>
-                                                    <p class="text-xs text-gray-500">
-                                                        <%= mainInventory.count %> items
-                                                    </p>
-                                                </div>
-                                                <p class="text-xl font-bold text-cs-orange">€<%=
-                                                        mainInventory.total.toFixed(2) %>
-                                                </p>
+                                        <div class="mb-4">
+                                            <div class="relative max-w-sm">
+                                                <input type="text" id="searchInput" placeholder="Rechercher un item..."
+                                                    class="w-full px-4 py-2.5 pl-10 bg-cs-surface border border-white/5 rounded-xl text-sm focus:outline-none focus:border-cs-orange/50 transition-colors">
+                                                <svg class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2"
+                                                    fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round"
+                                                        stroke-width="2"
+                                                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                                </svg>
                                             </div>
                                         </div>
-                                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                                            <% mainInventory.items.forEach(function(mi) { %>
-                                                <div class="glass rounded-xl p-4 item-card glass-hover">
+
+                                        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"
+                                            id="itemsGrid">
+                                            <% items.forEach(function(item) { %>
+                                                <div class="glass rounded-xl p-4 item-card glass-hover"
+                                                    data-name="<%= item.market_hash_name.toLowerCase() %>">
                                                     <div class="flex gap-3">
                                                         <div
                                                             class="flex-shrink-0 w-[72px] h-[54px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
-                                                            <% if (mi.imageUrl) { %>
-                                                                <img src="<%= mi.imageUrl %>" alt="" class="item-img"
+                                                            <% if (item.imageUrl) { %>
+                                                                <img src="<%= item.imageUrl %>" alt="" class="item-img"
                                                                     loading="lazy"
-                                                                    onerror="this.onerror=null;this.style.display='none';this.parentElement.innerHTML='<span class=\'text-xl\'>🔫</span>'">
+                                                                    onerror="this.onerror=null;this.style.display='none';this.parentElement.innerHTML='<span class=\'text-2xl\'>🔫</span>'">
                                                                 <% } else { %>
-                                                                    <span class="text-xl">🔫</span>
+                                                                    <span class="text-2xl">🔫</span>
                                                                     <% } %>
                                                         </div>
                                                         <div class="flex-1 min-w-0">
                                                             <div class="flex items-start justify-between gap-2">
                                                                 <div class="min-w-0">
-                                                                    <p
-                                                                        class="text-xs font-semibold text-white truncate">
-                                                                        <%= mi.market_hash_name %>
+                                                                    <p class="text-sm font-semibold text-white truncate"
+                                                                        title="<%= item.market_hash_name %>">
+                                                                        <%= item.market_hash_name %>
                                                                     </p>
-                                                                    <div
-                                                                        class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                                    <div class="flex items-center gap-2 mt-1 flex-wrap">
                                                                         <span class="badge"
-                                                                            style="background:<%= mi.rarity.bg %>;color:<%= mi.rarity.color %>">
-                                                                            <%= mi.rarity.name %>
+                                                                            style="background:<%= item.rarity.bg %>;color:<%= item.rarity.color %>">
+                                                                            <%= item.rarity.name %>
                                                                         </span>
-                                                                        <% if (mi.wear) { %>
-                                                                            <span class="text-[10px] font-mono"
-                                                                                style="color:<%= mi.wear.color %>">
-                                                                                <%= mi.wear.short %>
-                                                                            </span>
+                                                                        <% if (item.quantity> 1) { %>
+                                                                            <span
+                                                                                class="badge bg-white/10 text-gray-300">x
+                                                                                <%= item.quantity %></span>
                                                                             <% } %>
-                                                                                <% if (mi.quantity> 1) { %>
+                                                                                <% if (item.casket_ids.length> 0) { %>
                                                                                     <span
-                                                                                        class="badge bg-white/10 text-gray-300">x
-                                                                                        <%= mi.quantity %></span>
+                                                                                        class="badge bg-cs-purple/15 text-cs-purple">📦
+                                                                                        <%= item.casket_ids.length %>
+                                                                                            </span>
                                                                                     <% } %>
                                                                     </div>
                                                                 </div>
                                                                 <div class="text-right flex-shrink-0">
                                                                     <p class="text-sm font-bold text-cs-orange">€<%=
-                                                                            mi.price ? mi.price.toFixed(2) : '—' %>
+                                                                            item.prices.steam ?
+                                                                            item.prices.steam.toFixed(2) : '—' %>
                                                                     </p>
-                                                                    <% if (mi.quantity> 1 && mi.total > 0) { %>
+                                                                    <% if (item.quantity> 1 && item.total > 0) { %>
                                                                         <p class="text-[10px] text-gray-500">Total: €<%=
-                                                                                mi.total.toFixed(2) %>
+                                                                                item.total.toFixed(2) %>
                                                                         </p>
                                                                         <% } %>
                                                                 </div>
                                                             </div>
-                                                            <% if (mi.float_value) { %>
-                                                                <div class="mt-1.5">
+                                                            <% if (item.float_value) { %>
+                                                                <div class="mt-2">
+                                                                    <div
+                                                                        class="flex items-center justify-between text-[10px] text-gray-500 mb-0.5">
+                                                                        <span
+                                                                            style="color:<%= item.wear ? item.wear.color : '#999' %>">
+                                                                            <%= item.wear ? item.wear.name : '' %>
+                                                                        </span>
+                                                                        <span class="font-mono">
+                                                                            <%= item.float_value.toFixed(8) %>
+                                                                        </span>
+                                                                    </div>
                                                                     <div class="float-bar">
                                                                         <div class="float-marker"
-                                                                            style="left:<%= (mi.float_value * 100) %>%">
+                                                                            style="left:<%= (item.float_value * 100) %>%">
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -589,6 +612,27 @@
                                                 </div>
                                                 <% }) %>
                                         </div>
+
+                                        <% if (pagination.totalPages> 1) { %>
+                                            <div class="flex items-center justify-center gap-2 mt-6">
+                                                <% if (pagination.page> 1) { %><a
+                                                        href="?page=<%= pagination.page - 1 %>&days=<%= days %>&tab=overview"
+                                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10">←</a>
+                                                    <% } %>
+                                                        <% for (var p=Math.max(1, pagination.page - 2); p
+                                                            <=Math.min(pagination.totalPages, pagination.page + 2); p++)
+                                                            { %>
+                                                            <a href="?page=<%= p %>&days=<%= days %>&tab=overview"
+                                                                class="px-3 py-1.5 text-sm rounded-lg <%= p === pagination.page ? 'bg-cs-orange text-white' : 'bg-white/5 hover:bg-white/10' %>">
+                                                                <%= p %>
+                                                            </a>
+                                                            <% } %>
+                                                                <% if (pagination.page < pagination.totalPages) { %><a
+                                                                        href="?page=<%= pagination.page + 1 %>&days=<%= days %>&tab=overview"
+                                                                        class="px-3 py-1.5 text-sm bg-white/5 rounded-lg hover:bg-white/10">→</a>
+                                                                    <% } %>
+                                            </div>
+                                            <% } %>
                                     </div>
                                     <% } %>
 
@@ -672,13 +716,18 @@
             });
         }
 
-        // Casket toggle
-        function toggleCasket(id) {
-            var el = document.getElementById('casket-' + id);
-            var toggle = document.getElementById('toggle-' + id);
-            if (el) {
-                el.classList.toggle('hidden');
-                toggle.textContent = el.classList.contains('hidden') ? '▼ Détails' : '▲ Réduire';
+        // Folder toggle
+        function toggleFolder(id) {
+            var contents = document.getElementById('contents-' + id);
+            var chevron = document.getElementById('chevron-' + id);
+            var icon = document.getElementById('folder-icon-' + id);
+            var folder = document.getElementById('folder-' + id);
+            if (contents) {
+                var isOpen = contents.classList.contains('open');
+                contents.classList.toggle('open');
+                if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(180deg)';
+                if (icon) icon.textContent = isOpen ? '📁' : '📂';
+                if (folder) folder.classList.toggle('open', !isOpen);
             }
         }
 

@@ -9,15 +9,19 @@ const steamAuth = require('../services/steamAuth');
 const STEAM_CDN = 'https://community.akamai.steamstatic.com/economy/image/';
 
 /**
- * Build image URL from icon_url
+ * Build image URL - tries icon_url (Steam CDN), then schema_image, then null
  */
-function buildImageUrl(iconUrl) {
-    if (!iconUrl) return null;
-    return `${STEAM_CDN}${iconUrl}/200fx200f`;
+function getImageUrl(item, iconMap) {
+    // Priority 1: Steam CDN icon_url
+    const iconUrl = (iconMap && iconMap.get(item.market_hash_name)) || item.icon_url;
+    if (iconUrl) return `${STEAM_CDN}${iconUrl}/200fx200f`;
+    // Priority 2: Schema image from ByMykel API
+    if (item.schema_image) return item.schema_image;
+    return null;
 }
 
 /**
- * Build icon lookup map from all items
+ * Build icon lookup map from all items (for Steam CDN icons)
  */
 function buildIconMap(items) {
     const map = new Map();
@@ -30,12 +34,37 @@ function buildIconMap(items) {
 }
 
 /**
+ * Build schema image lookup map (for ByMykel images)
+ */
+function buildSchemaImageMap(items) {
+    const map = new Map();
+    for (const item of items) {
+        if (item.schema_image && !map.has(item.market_hash_name)) {
+            map.set(item.market_hash_name, item.schema_image);
+        }
+    }
+    return map;
+}
+
+/**
+ * Get best image URL from all available sources
+ */
+function getBestImage(name, iconMap, schemaMap) {
+    const iconUrl = iconMap.get(name);
+    if (iconUrl) return `${STEAM_CDN}${iconUrl}/200fx200f`;
+    const schemaImg = schemaMap.get(name);
+    if (schemaImg) return schemaImg;
+    return null;
+}
+
+/**
  * GET / - Main dashboard
  */
 router.get('/', (req, res) => {
     try {
         const items = db.getItems();
         const iconMap = buildIconMap(items);
+        const schemaMap = buildSchemaImageMap(items);
 
         // Build per-item data with prices
         const itemsWithPrices = [];
@@ -67,8 +96,6 @@ router.get('/', (req, res) => {
             const itemTotal = (prices.average || 0) * data.quantity;
             totalValue += itemTotal;
 
-            const iconUrl = iconMap.get(name) || data.items[0]?.icon_url;
-
             itemsWithPrices.push({
                 market_hash_name: name,
                 quantity: data.quantity,
@@ -76,7 +103,7 @@ router.get('/', (req, res) => {
                 float_value: floatVal,
                 wear,
                 rarity,
-                imageUrl: buildImageUrl(iconUrl),
+                imageUrl: getBestImage(name, iconMap, schemaMap),
                 prices,
                 total: itemTotal
             });
@@ -96,10 +123,12 @@ router.get('/', (req, res) => {
             // Group by name within this casket
             const casketGroups = {};
             for (const ci of casketItems) {
-                if (!casketGroups[ci.market_hash_name]) {
-                    casketGroups[ci.market_hash_name] = { quantity: 0, float_value: ci.float_value, icon_url: ci.icon_url };
+                const key = ci.market_hash_name;
+                if (!casketGroups[key]) {
+                    casketGroups[key] = { quantity: 0, float_value: ci.float_value, items: [] };
                 }
-                casketGroups[ci.market_hash_name].quantity++;
+                casketGroups[key].quantity++;
+                casketGroups[key].items.push(ci);
             }
 
             for (const [name, g] of Object.entries(casketGroups)) {
@@ -109,15 +138,13 @@ router.get('/', (req, res) => {
                 const lineTotal = (prices.average || 0) * g.quantity;
                 casketTotal += lineTotal;
 
-                const iconUrl = iconMap.get(name) || g.icon_url;
-
                 casketDetails.push({
                     market_hash_name: name,
                     quantity: g.quantity,
                     float_value: g.float_value,
                     wear,
                     rarity,
-                    imageUrl: buildImageUrl(iconUrl),
+                    imageUrl: getBestImage(name, iconMap, schemaMap),
                     price: prices.average,
                     total: lineTotal
                 });
@@ -143,9 +170,10 @@ router.get('/', (req, res) => {
         const mainGroups = {};
         for (const mi of mainItemsList) {
             if (!mainGroups[mi.market_hash_name]) {
-                mainGroups[mi.market_hash_name] = { quantity: 0, float_value: mi.float_value, icon_url: mi.icon_url };
+                mainGroups[mi.market_hash_name] = { quantity: 0, float_value: mi.float_value, items: [] };
             }
             mainGroups[mi.market_hash_name].quantity++;
+            mainGroups[mi.market_hash_name].items.push(mi);
         }
         const mainDetails = [];
         for (const [name, g] of Object.entries(mainGroups)) {
@@ -154,14 +182,13 @@ router.get('/', (req, res) => {
             const wear = priceService.getWearLevel(g.float_value);
             const lineTotal = (prices.average || 0) * g.quantity;
             mainTotal += lineTotal;
-            const iconUrl = iconMap.get(name) || g.icon_url;
             mainDetails.push({
                 market_hash_name: name,
                 quantity: g.quantity,
                 float_value: g.float_value,
                 wear,
                 rarity,
-                imageUrl: buildImageUrl(iconUrl),
+                imageUrl: getBestImage(name, iconMap, schemaMap),
                 price: prices.average,
                 total: lineTotal
             });
@@ -181,7 +208,7 @@ router.get('/', (req, res) => {
         const paginatedItems = itemsWithPrices.slice((page - 1) * perPage, page * perPage);
 
         // Active tab
-        const tab = req.query.tab || 'overview';
+        const tab = req.query.tab || 'caskets';
 
         res.render('dashboard', {
             items: paginatedItems,
@@ -213,7 +240,7 @@ router.get('/', (req, res) => {
             lastRefresh: null, isRefreshing: false,
             status: steamAuth.getStatus(),
             pagination: { page: 1, perPage: 50, totalPages: 1, total: 0 },
-            days: 30, tab: 'overview'
+            days: 30, tab: 'caskets'
         });
     }
 });

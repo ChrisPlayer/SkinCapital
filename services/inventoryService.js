@@ -97,7 +97,8 @@ async function loadStorageUnit(casketId) {
                         asset_id: item.id?.toString(),
                         casket_id: casketId,
                         float_value: resolved.float_value,
-                        paint_seed: resolved.paint_seed
+                        paint_seed: resolved.paint_seed,
+                        schema_image: resolved.image_url || null
                     };
                 });
 
@@ -252,13 +253,7 @@ async function refresh() {
         const storageItems = items.filter(i => i.casket_id);
         const mainItems = items.filter(i => !i.casket_id);
         const storageUniqueNames = [...new Set(storageItems.map(i => i.market_hash_name))];
-        console.log(`[Inventory] Main inventory unique names: ${[...new Set(mainItems.map(i => i.market_hash_name))].length}`);
-        console.log(`[Inventory] Storage items unique names: ${storageUniqueNames.length}`);
-        if (storageUniqueNames.length <= 5) {
-            console.log(`[Inventory] Storage names sample:`, storageUniqueNames);
-        } else {
-            console.log(`[Inventory] Storage names sample:`, storageUniqueNames.slice(0, 10));
-        }
+        console.log(`[Inventory] Unique items: ${uniqueNames.length} total (${[...new Set(mainItems.map(i => i.market_hash_name))].length} main, ${storageUniqueNames.length} storage)`);
 
         // Fetch prices (rate limited)
         let totalValue = 0;

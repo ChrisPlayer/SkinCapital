@@ -1,0 +1,71 @@
+import * as historyQueries from '../../db/queries/history.ts';
+import { getOldAveragePrice } from '../../db/queries/prices.ts';
+import { logger } from '../../lib/logger.ts';
+import type { ChangeInfo, HistoryPoint } from '../../../shared/types/api.ts';
+
+export function saveSnapshot(totalValue: number, itemCount: number) {
+  try {
+    historyQueries.saveSnapshot(totalValue, itemCount);
+    logger.info(`[History] Saved snapshot: \u20ac${totalValue.toFixed(2)}, ${itemCount} items`);
+  } catch (err) {
+    logger.error('[History] Failed to save snapshot:', (err as Error).message);
+  }
+}
+
+export function getHistory(days: number = 30): HistoryPoint[] {
+  try {
+    const records = historyQueries.getHistory(days);
+    return records.map((r) => ({
+      date: r.timestamp,
+      value: r.total_value,
+      itemCount: r.item_count,
+    }));
+  } catch (err) {
+    logger.error('[History] Failed to get history:', (err as Error).message);
+    return [];
+  }
+}
+
+export function get24hChange(currentValue: number): ChangeInfo {
+  try {
+    const yesterday = historyQueries.getYesterdayValue();
+
+    if (!yesterday) {
+      return { change: 0, percentage: 0, hasData: false };
+    }
+
+    const change = currentValue - yesterday.total_value;
+    const percentage =
+      yesterday.total_value > 0 ? (change / yesterday.total_value) * 100 : 0;
+
+    return {
+      change,
+      percentage,
+      hasData: true,
+      yesterdayValue: yesterday.total_value,
+    };
+  } catch (err) {
+    logger.error('[History] Failed to calculate 24h change:', (err as Error).message);
+    return { change: 0, percentage: 0, hasData: false };
+  }
+}
+
+export function getItem24hChange(
+  marketHashName: string,
+  currentPrice: number,
+): ChangeInfo {
+  try {
+    const oldPrice = getOldAveragePrice(marketHashName);
+
+    if (oldPrice !== null) {
+      const change = currentPrice - oldPrice;
+      const percentage = (change / oldPrice) * 100;
+      return { change, percentage, hasData: true };
+    }
+
+    return { change: 0, percentage: 0, hasData: false };
+  } catch (err) {
+    logger.error(`[History] Failed to get item 24h change for ${marketHashName}:`, (err as Error).message);
+    return { change: 0, percentage: 0, hasData: false };
+  }
+}

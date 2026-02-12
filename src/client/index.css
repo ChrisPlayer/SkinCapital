@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 7%;
+    --foreground: 220 10% 90%;
+    --card: 216 30% 12%;
+    --card-foreground: 220 10% 90%;
+    --popover: 216 30% 12%;
+    --popover-foreground: 220 10% 90%;
+    --primary: 36 70% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 20% 15%;
+    --secondary-foreground: 220 10% 90%;
+    --muted: 220 20% 15%;
+    --muted-foreground: 220 10% 50%;
+    --accent: 220 20% 18%;
+    --accent-foreground: 220 10% 90%;
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 20% 18%;
+    --input: 220 20% 18%;
+    --ring: 36 70% 50%;
+    --radius: 0.75rem;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    background: hsl(var(--background));
+    color: hsl(var(--foreground));
+    min-height: 100vh;
+  }
+
+  ::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.1);
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-[rgba(22,32,45,0.85)] backdrop-blur-xl border border-white/[0.06] rounded-2xl;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-cs-orange to-cs-pink bg-clip-text;
+    -webkit-text-fill-color: transparent;
+  }
+}

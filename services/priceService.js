@@ -11,20 +11,69 @@ const steamQueue = new PQueue({ concurrency: 1, interval: 3500, intervalCap: 1 }
  * @returns {Promise<Object>} Price info
  */
 async function getPrices(marketHashName) {
-    const prices = {
-        steam: null,
-        average: null
-    };
+    // 1. Check cache first
+    const cached = getCachedPrices(marketHashName);
 
-    const steamPrice = await getSteamMarketPrice(marketHashName);
-    prices.steam = steamPrice;
-    prices.average = steamPrice;
+    // 2. Smart Cache Strategy
+    // If we have a cached price, check its age
+    if (cached.average && cached.timestamp) {
+        let cacheTime;
+        try {
+            cacheTime = new Date(cached.timestamp + (cached.timestamp.toString().includes('Z') ? '' : 'Z')); // Treat as UTC
+        } catch (e) {
+            cacheTime = new Date(); // Fallback to now if parsing fails (won't refresh immediately but prevents crash)
+        }
 
-    // Save to database
-    if (steamPrice !== null) {
-        db.insertPrice(marketHashName, 'steam', steamPrice);
+        const ageHours = (Date.now() - cacheTime.getTime()) / (1000 * 60 * 60);
+
+        if (ageHours < 20) {
+            // Fresh enough (< 20 hours)
+            return cached;
+        }
+
+        // If > 20 hours, we want to try refreshing ("start from 0")
+        // But keep cached as fallback in case of failure
+        console.log(`[Price] Cache stale for ${marketHashName} (${ageHours.toFixed(1)}h old). Refreshing...`);
     }
 
+    // 3. Fetch from Steam (if not cached OR if stale)
+    const steamPrice = await getSteamMarketPrice(marketHashName);
+
+    // 4. Handle Result
+    if (steamPrice !== null) {
+        // Success: Update DB and return new price
+        db.insertPrice(marketHashName, 'steam', steamPrice);
+        return { steam: steamPrice, average: steamPrice };
+    }
+
+    // 5. Fallback: If fetch failed (Rate Limit?), use stale cache if available
+    if (cached.average) {
+        console.warn(`[Price] Refresh failed for ${marketHashName}, using stale cache.`);
+        return cached;
+    }
+
+    // 6. No data available at all
+    return { steam: null, average: null };
+}
+
+/**
+ * Get prices for a list of stickers
+ * @param {Array} stickers - Array of sticker objects { name, ... }
+ * @returns {Promise<Object>} Map of sticker name -> price
+ */
+async function getStickerPrices(stickers) {
+    const prices = {};
+    if (!stickers || stickers.length === 0) return prices;
+
+    for (const sticker of stickers) {
+        if (sticker.name && !prices[sticker.name]) {
+            // Reuse the main smart getPrices logic
+            const p = await getPrices(sticker.name);
+            if (p.average) {
+                prices[sticker.name] = p.average;
+            }
+        }
+    }
     return prices;
 }
 
@@ -100,13 +149,13 @@ function parseSteamPrice(priceStr) {
 function getCachedPrices(marketHashName) {
     const prices = {
         steam: null,
-        average: null
+        average: null,
+        timestamp: null
     };
 
     const rows = db.all(`
-        SELECT source, price_eur FROM prices 
+        SELECT source, price_eur, timestamp FROM prices 
         WHERE market_hash_name = ? 
-        AND timestamp > datetime('now', '-12 hours')
         ORDER BY timestamp DESC
         LIMIT 5
     `, [marketHashName]);
@@ -114,6 +163,7 @@ function getCachedPrices(marketHashName) {
     for (const row of rows) {
         if (row.source === 'steam' && prices.steam === null) {
             prices.steam = row.price_eur;
+            prices.timestamp = row.timestamp; // capture timestamp
         }
     }
 
@@ -176,6 +226,7 @@ module.exports = {
     getPrices,
     getSteamMarketPrice,
     getCachedPrices,
+    getStickerPrices,
     getItemImageUrl,
     getItemRarity,
     getWearLevel

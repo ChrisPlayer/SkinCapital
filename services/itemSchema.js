@@ -13,6 +13,7 @@ const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 const SKINS_URL = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json';
 const STICKERS_URL = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/stickers.json';
+const CRATES_URL = 'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/crates.json';
 
 // Weapon defindex → name (fallback)
 const WEAPON_NAMES = {
@@ -39,6 +40,7 @@ const WEAPON_NAMES = {
 // Lookups - populated from API
 let skinLookup = {};     // "defindex_paintindex" → { name, image }
 let stickerLookup = {};  // sticker_kit_id → { name, image }
+let crateLookup = {};    // defindex → { name, image }
 let initialized = false;
 
 /**
@@ -72,11 +74,12 @@ async function initialize() {
     try {
         if (fs.existsSync(CACHE_FILE)) {
             const cache = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
-            if (cache.timestamp > Date.now() - CACHE_MAX_AGE && cache.version === 2) {
+            if (cache.timestamp > Date.now() - CACHE_MAX_AGE && cache.version === 3) {
                 skinLookup = cache.skins || {};
                 stickerLookup = cache.stickers || {};
+                crateLookup = cache.crates || {};
                 initialized = true;
-                console.log(`[Schema] Loaded from cache: ${Object.keys(skinLookup).length} skins, ${Object.keys(stickerLookup).length} stickers`);
+                console.log(`[Schema] Loaded from cache: ${Object.keys(skinLookup).length} skins, ${Object.keys(stickerLookup).length} stickers, ${Object.keys(crateLookup).length} crates`);
                 return;
             }
         }
@@ -127,14 +130,37 @@ async function initialize() {
         console.error('[Schema] Failed to download stickers:', err.message);
     }
 
+    // Download crates
+    try {
+        const crates = await downloadJSON(CRATES_URL);
+        for (const crate of crates) {
+            if (crate.id && crate.name) {
+                const match = crate.id.match(/crate-(\d+)/);
+                // ByMykel crates IDs are usually "crate-4001" etc.
+                // GC uses defindex. We need to map defindex to crate.
+                // The API "id" field is e.g. "crate-4609".
+                // But does it contain defindex?
+                // The API doesn't explicitly list defindex.
+                // However, usually crate-XXXX matches defindex XXXX for crates.
+                if (match) {
+                    crateLookup[match[1]] = { name: crate.name, image: crate.image || null };
+                }
+            }
+        }
+        console.log(`[Schema] Downloaded ${Object.keys(crateLookup).length} crates`);
+    } catch (err) {
+        console.error('[Schema] Failed to download crates:', err.message);
+    }
+
     // Save cache
     try {
         fs.mkdirSync(CACHE_DIR, { recursive: true });
         fs.writeFileSync(CACHE_FILE, JSON.stringify({
-            version: 2,
+            version: 3,
             timestamp: Date.now(),
             skins: skinLookup,
-            stickers: stickerLookup
+            stickers: stickerLookup,
+            crates: crateLookup
         }));
         console.log('[Schema] Cache saved');
     } catch (e) {
@@ -226,9 +252,72 @@ function extractStickerKitId(item) {
 }
 
 /**
+ * Extract applied stickers from GC item
+ * @returns {Array} Array of { slot, sticker_id, kit_id, name, image_url }
+ */
+function extractStickers(item) {
+    const stickers = [];
+
+    // Method 1: item.stickers array (from node-globaloffensive)
+    if (item.stickers && Array.isArray(item.stickers) && item.stickers.length > 0) {
+        item.stickers.forEach(s => {
+            if (s.sticker_id || s.kit) {
+                const kitId = s.sticker_id || s.kit;
+                const lookup = stickerLookup[kitId];
+                stickers.push({
+                    slot: s.slot,
+                    sticker_id: kitId,
+                    name: lookup ? lookup.name : `Sticker #${kitId}`,
+                    image_url: lookup ? lookup.image : null,
+                    wear: s.wear || null
+                });
+            }
+        });
+        return stickers;
+    }
+
+    // Method 2: GC attributes (fallback)
+    // Attributes 113+ are sticker slot 0..5
+    if (item.attribute && Array.isArray(item.attribute)) {
+        for (let slot = 0; slot < 6; slot++) {
+            const idAttrCheck = item.attribute.find(a => a.def_index === 113 + (slot * 4));
+            if (idAttrCheck) {
+                let kitId = idAttrCheck.uint32_value || idAttrCheck.value;
+                if (!kitId && idAttrCheck.value_bytes) {
+                    try { kitId = Buffer.from(idAttrCheck.value_bytes).readUInt32LE(0); } catch (e) { }
+                }
+
+                if (kitId) {
+                    const lookup = stickerLookup[kitId];
+                    // Try to find wear (def_index 114 + 4*slot)
+                    const wearAttr = item.attribute.find(a => a.def_index === 114 + (slot * 4));
+                    let wear = null;
+                    if (wearAttr) {
+                        wear = wearAttr.float_value;
+                        if (wear === undefined && wearAttr.value_bytes) {
+                            try { wear = Buffer.from(wearAttr.value_bytes).readFloatLE(0); } catch (e) { }
+                        }
+                    }
+
+                    stickers.push({
+                        slot,
+                        sticker_id: kitId,
+                        name: lookup ? lookup.name : `Sticker #${kitId}`,
+                        image_url: lookup ? lookup.image : null,
+                        wear
+                    });
+                }
+            }
+        }
+    }
+
+    return stickers.length > 0 ? stickers : null;
+}
+
+/**
  * Resolve a GC item to its market_hash_name + image
  * @param {Object} item - Raw GC item from getCasketContents
- * @returns {Object} { market_hash_name, float_value, paint_seed, image_url }
+ * @returns {Object} { market_hash_name, float_value, paint_seed, image_url, stickers }
  */
 function resolveItem(item) {
     const defindex = item.def_index;
@@ -236,6 +325,7 @@ function resolveItem(item) {
     const quality = item.quality;
     const floatValue = extractFloat(item);
     const paintSeed = extractPaintSeed(item);
+    const stickers = extractStickers(item);
 
     // Build quality prefix
     let prefix = '';
@@ -249,7 +339,10 @@ function resolveItem(item) {
     let imageUrl = null;
 
     // Case 1: Weapon skin (has paint_index)
+    let itemType = 'Unknown';
+
     if (paintIndex && defindex) {
+        itemType = 'Weapon';
         const key = `${defindex}_${paintIndex}`;
         const skinInfo = skinLookup[key];
 
@@ -264,31 +357,52 @@ function resolveItem(item) {
             marketHashName = wear ? `${base} (${wear})` : base;
         }
     }
-    // Case 2: Sticker (defindex 1209) or Patch (4609) or similar
+    // Case 2: Sticker (1209), Patch (4609), Graffiti (1348/1349)
     else if (defindex === 1209 || defindex === 4609 || defindex === 1348 || defindex === 1349) {
+        itemType = defindex === 1209 ? 'Sticker' : defindex === 4609 ? 'Patch' : 'Graffiti';
         const kitId = extractStickerKitId(item);
         if (kitId && stickerLookup[kitId]) {
             marketHashName = stickerLookup[kitId].name;
             imageUrl = stickerLookup[kitId].image;
         } else {
-            const typeLabel = defindex === 1209 ? 'Sticker' : defindex === 4609 ? 'Patch' : 'Graffiti';
-            marketHashName = kitId ? `${typeLabel} #${kitId}` : `${typeLabel} #${defindex}`;
+            marketHashName = kitId ? `${itemType} #${kitId}` : `${itemType} #${defindex}`;
         }
     }
-    // Case 3: Vanilla knife/weapon (no paint)
+    // Case 3: Container / Case
+    else if (item.casket_id || defindex === 1201 || (defindex >= 4000 && defindex < 4800)) { // Expanded range for cases/pins
+        itemType = 'Container';
+        // Check crateLookup
+        // crateLookup keys are the number part of "crate-4001" etc.
+        // Usually this matches defindex? Let's assume yes for now as ByMykel IDs often mirror defindexes.
+        // If not, we might need a mapping, but let's try direct lookup.
+        if (crateLookup[defindex]) {
+            marketHashName = crateLookup[defindex].name;
+            imageUrl = crateLookup[defindex].image;
+        } else {
+            // Fallback
+            marketHashName = `Container #${defindex}`;
+        }
+    }
+    // Case 4: Vanilla knife/weapon (no paint)
     else if (defindex && WEAPON_NAMES[defindex]) {
+        itemType = 'Weapon'; // Vanilla
         marketHashName = prefix + WEAPON_NAMES[defindex];
     }
-    // Case 4: Unknown item - store def_index for debugging
+    // Case 5: Unknown
     else {
         marketHashName = `Item #${defindex || 'Unknown'}`;
     }
+
+    // Force stickers to empty if not a weapon
+    const finalStickers = (itemType === 'Weapon') ? stickers : [];
 
     return {
         market_hash_name: marketHashName,
         float_value: floatValue,
         paint_seed: paintSeed,
-        image_url: imageUrl
+        image_url: imageUrl,
+        stickers: finalStickers,
+        item_type: itemType
     };
 }
 

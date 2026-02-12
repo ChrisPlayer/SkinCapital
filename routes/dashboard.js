@@ -73,6 +73,11 @@ router.get('/', (req, res) => {
         // Group items by market_hash_name
         const itemGroups = {};
         for (const item of items) {
+            // Parse stickers if present
+            if (item.stickers && typeof item.stickers === 'string') {
+                try { item.stickers = JSON.parse(item.stickers); } catch (e) { item.stickers = []; }
+            }
+
             if (!itemGroups[item.market_hash_name]) {
                 itemGroups[item.market_hash_name] = {
                     market_hash_name: item.market_hash_name,
@@ -93,8 +98,34 @@ router.get('/', (req, res) => {
             const rarity = priceService.getItemRarity(name);
             const floatVal = data.items[0]?.float_value;
             const wear = priceService.getWearLevel(floatVal);
-            const itemTotal = (prices.average || 0) * data.quantity;
+            let itemTotal = (prices.average || 0) * data.quantity;
+
+            // Calculate sticker value for the group (sum of stickers on each item in the group)
+            let stickerValue = 0;
+            for (const item of data.items) {
+                if (item.stickers && item.stickers.length > 0) {
+                    for (const sticker of item.stickers) {
+                        const stickerPrices = priceService.getCachedPrices(sticker.name);
+                        stickerValue += (stickerPrices.average || 0);
+                    }
+                }
+            }
+            itemTotal += stickerValue; // Add sticker value to the item's total value
+
             totalValue += itemTotal;
+
+            const iconUrl = iconMap.get(name) || data.items[0]?.icon_url || data.items[0]?.schema_image;
+
+            // Generate sticker data for display (using the first item as representative for the group, 
+            // though technically different items might have different stickers. 
+            // For the "Overview" tab which groups by name, this is a known limitation, 
+            // but for the "Main" and "Storage Unit" tabs we list individual items usually? 
+            // Wait, the current UI groups everything even in storage units?
+            // Let's check the storage unit logic below.
+
+            // Actually, for the global list, we just show the base item. 
+            // Stickers are most relevant when viewing specific items.
+            // But the user wants to see sticker prices.
 
             itemsWithPrices.push({
                 market_hash_name: name,
@@ -105,7 +136,10 @@ router.get('/', (req, res) => {
                 rarity,
                 imageUrl: getBestImage(name, iconMap, schemaMap),
                 prices,
-                total: itemTotal
+                total: itemTotal,
+                // Pass stickers from the first item for now, strictly for the overview
+                stickers: data.items[0]?.stickers || [],
+                sticker_value: stickerValue // Total sticker value for this group
             });
         }
 
@@ -120,23 +154,49 @@ router.get('/', (req, res) => {
             let casketTotal = 0;
             const casketDetails = [];
 
-            // Group by name within this casket
+            // Group by name within this casket (and by unique item to handle stickers better?)
+            // Actually, the current logic groups by name for display compactness. 
+            // If we want stickers to show per item, we might need to ungroup or accept that we show stickers for one representative.
+            // Requirement was "items with their price".
+            // Let's keep grouping but collect stickers.
+
             const casketGroups = {};
             for (const ci of casketItems) {
-                const key = ci.market_hash_name;
-                if (!casketGroups[key]) {
-                    casketGroups[key] = { quantity: 0, float_value: ci.float_value, items: [] };
+                // Parse stickers if needed (though already done in previous loop? No, previous loop was for `items`, `casketItems` is a filter of that same array reference, so yes, parsing is done)
+
+                if (!casketGroups[ci.market_hash_name]) {
+                    casketGroups[ci.market_hash_name] = {
+                        quantity: 0,
+                        float_value: ci.float_value,
+                        icon_url: ci.icon_url || ci.schema_image,
+                        items: []
+                    };
                 }
-                casketGroups[key].quantity++;
-                casketGroups[key].items.push(ci);
+                casketGroups[ci.market_hash_name].quantity++;
+                casketGroups[ci.market_hash_name].items.push(ci);
             }
 
             for (const [name, g] of Object.entries(casketGroups)) {
                 const prices = priceService.getCachedPrices(name);
                 const rarity = priceService.getItemRarity(name);
                 const wear = priceService.getWearLevel(g.float_value);
-                const lineTotal = (prices.average || 0) * g.quantity;
+                let lineTotal = (prices.average || 0) * g.quantity;
+
+                let stickerValue = 0;
+                // Calculate total sticker value for this group
+                for (const item of g.items) {
+                    if (item.stickers && item.stickers.length > 0) {
+                        for (const s of item.stickers) {
+                            const sp = priceService.getCachedPrices(s.name);
+                            stickerValue += (sp.average || 0);
+                        }
+                    }
+                }
+                lineTotal += stickerValue;
                 casketTotal += lineTotal;
+
+                // For display, use first item's image/stickers
+                const representative = g.items[0];
 
                 casketDetails.push({
                     market_hash_name: name,
@@ -146,7 +206,9 @@ router.get('/', (req, res) => {
                     rarity,
                     imageUrl: getBestImage(name, iconMap, schemaMap),
                     price: prices.average,
-                    total: lineTotal
+                    total: lineTotal,
+                    stickers: representative.stickers || [],
+                    sticker_value: stickerValue
                 });
             }
 
@@ -154,6 +216,7 @@ router.get('/', (req, res) => {
 
             storageUnits.push({
                 casket_id: casketId,
+                name: casketItems[0]?.casket_name || `Storage Unit #${storageUnits.length + 1}`,
                 short_id: casketId.toString().slice(-6),
                 item_count: casketItems.length,
                 unique_items: Object.keys(casketGroups).length,
@@ -180,8 +243,24 @@ router.get('/', (req, res) => {
             const prices = priceService.getCachedPrices(name);
             const rarity = priceService.getItemRarity(name);
             const wear = priceService.getWearLevel(g.float_value);
-            const lineTotal = (prices.average || 0) * g.quantity;
+            let lineTotal = (prices.average || 0) * g.quantity;
+
+            let stickerValue = 0;
+            // Calculate total sticker value for this group
+            for (const item of g.items) {
+                if (item.stickers && item.stickers.length > 0) {
+                    for (const s of item.stickers) {
+                        const sp = priceService.getCachedPrices(s.name);
+                        stickerValue += (sp.average || 0);
+                    }
+                }
+            }
+            lineTotal += stickerValue;
             mainTotal += lineTotal;
+
+            // Representative item for stickers/images
+            const representative = g.items[0];
+
             mainDetails.push({
                 market_hash_name: name,
                 quantity: g.quantity,
@@ -190,7 +269,9 @@ router.get('/', (req, res) => {
                 rarity,
                 imageUrl: getBestImage(name, iconMap, schemaMap),
                 price: prices.average,
-                total: lineTotal
+                total: lineTotal,
+                stickers: representative.stickers || [],
+                sticker_value: stickerValue
             });
         }
         mainDetails.sort((a, b) => b.total - a.total);
@@ -198,8 +279,30 @@ router.get('/', (req, res) => {
         // History
         const days = parseInt(req.query.days) || 30;
         const historyData = historyService.getHistory(days);
+
+        // Calculate daily variations for the table
+        const dailyHistory = historyData.map((day, index) => {
+            let change = 0;
+            let changePercent = 0;
+
+            // Compare with previous day's data (assuming historyData is sorted by date ASC)
+            // But wait, getHistory usually returns ASC.
+            // If we want "previous day" we look at index - 1.
+
+            if (index > 0) {
+                const prev = historyData[index - 1];
+                change = day.value - prev.value;
+                changePercent = prev.value > 0 ? (change / prev.value) * 100 : 0;
+            }
+
+            return {
+                ...day,
+                change,
+                changePercent
+            };
+        }).reverse(); // Reverse to show newest first
+
         const change24h = historyService.get24hChange(totalValue);
-        const priceAlerts = historyService.getPriceAlerts(5);
 
         // Pagination for global view
         const page = parseInt(req.query.page) || 1;
@@ -208,7 +311,7 @@ router.get('/', (req, res) => {
         const paginatedItems = itemsWithPrices.slice((page - 1) * perPage, page * perPage);
 
         // Active tab
-        const tab = req.query.tab || 'caskets';
+        const tab = req.query.tab || 'main';
 
         res.render('dashboard', {
             items: paginatedItems,
@@ -218,7 +321,7 @@ router.get('/', (req, res) => {
             totalValue,
             change24h,
             historyData,
-            priceAlerts,
+            dailyHistory,
             storageUnits,
             mainInventory: { items: mainDetails, total: mainTotal, count: mainItemsList.length },
             lastRefresh: inventoryService.getLastRefresh(),
@@ -234,13 +337,13 @@ router.get('/', (req, res) => {
             error: err.message,
             items: [], allItems: [], totalItems: 0, uniqueItems: 0, totalValue: 0,
             change24h: { change: 0, percentage: 0, hasData: false },
-            historyData: [], priceAlerts: [],
+            historyData: [], dailyHistory: [],
             storageUnits: [],
             mainInventory: { items: [], total: 0, count: 0 },
             lastRefresh: null, isRefreshing: false,
             status: steamAuth.getStatus(),
             pagination: { page: 1, perPage: 50, totalPages: 1, total: 0 },
-            days: 30, tab: 'caskets'
+            days: 30, tab: 'main'
         });
     }
 });
@@ -306,6 +409,26 @@ router.get('/api/status', (req, res) => {
         lastRefresh: inventoryService.getLastRefresh(),
         isRefreshing: inventoryService.isRefreshInProgress()
     });
+});
+
+router.get('/api/item/:marketHashName', async (req, res) => {
+    try {
+        const name = req.params.marketHashName;
+        // console.log(`[API] Fetching details for: "${name}"`);
+
+        const prices = priceService.getCachedPrices(name);
+        const changeInfo = historyService.getItem24hChange(name, prices.average || 0);
+
+        res.json({
+            name: name,
+            price: prices.average,
+            raw_price: prices,
+            change: changeInfo
+        });
+    } catch (err) {
+        console.error(`[API] Error fetching item ${req.params.marketHashName}:`, err);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 module.exports = router;

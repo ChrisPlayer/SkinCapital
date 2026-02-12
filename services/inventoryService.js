@@ -18,9 +18,10 @@ async function getStorageUnits() {
 
     if (!steamAuth.isConnectedToGC) {
         console.log('[Inventory] Not connected to GC, waiting...');
-        const connected = await steamAuth.waitForGC(30000);
+        const connected = await steamAuth.waitForGC(5000); // reduced wait time
         if (!connected) {
-            throw new Error('Cannot connect to Game Coordinator');
+            console.warn('[Inventory] GC connection timeout. Skipping Storage Units refresh.');
+            return []; // Return empty array instead of throwing
         }
     }
 
@@ -76,7 +77,7 @@ async function loadStorageUnit(casketId) {
     return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
             console.warn(`[Inventory] Casket ${casketId} load timeout, skipping`);
-            resolve([]);
+            reject(new Error('Timeout'));
         }, 30000);
 
         try {
@@ -85,7 +86,7 @@ async function loadStorageUnit(casketId) {
 
                 if (err) {
                     console.error(`[Inventory] Error loading casket ${casketId}:`, err);
-                    resolve([]);
+                    reject(err);
                     return;
                 }
 
@@ -98,6 +99,9 @@ async function loadStorageUnit(casketId) {
                         casket_id: casketId,
                         float_value: resolved.float_value,
                         paint_seed: resolved.paint_seed,
+                        stickers: resolved.stickers,
+                        // Fallback image: iconCache (from Steam API) -> schema image (from skins.json) -> generated URL
+                        icon_url: iconCache.get(resolved.market_hash_name) || null,
                         schema_image: resolved.image_url || null
                     };
                 });
@@ -131,14 +135,29 @@ async function getAllStorageUnitItems() {
     console.log(`[Inventory] Loading ${nonEmptyCaskets.length} non-empty Storage Units...`);
 
     for (const casket of nonEmptyCaskets) {
-        // Rate limit: 1 second between GC calls
-        await sleep(1000);
+        let retries = 3;
+        let loaded = false;
 
-        try {
-            const items = await loadStorageUnit(casket.casket_id);
-            allItems.push(...items);
-        } catch (err) {
-            console.error(`[Inventory] Failed to load casket ${casket.casket_id}:`, err.message);
+        while (retries > 0 && !loaded) {
+            // Rate limit: 1.5 second between GC calls (slightly increased)
+            await sleep(1500);
+
+            try {
+                const items = await loadStorageUnit(casket.casket_id);
+                // Attach casket name to each item
+                items.forEach(i => i.casket_name = casket.name);
+                allItems.push(...items);
+                loaded = true;
+            } catch (err) {
+                console.error(`[Inventory] Failed to load casket ${casket.casket_id} (Attempt ${4 - retries}/3):`, err.message);
+                retries--;
+                if (retries > 0) {
+                    console.log(`[Inventory] Retrying casket ${casket.casket_id} in 5 seconds...`);
+                    await sleep(5000);
+                } else {
+                    console.error(`[Inventory] Casket ${casket.casket_id} failed after 3 attempts. Skipping.`);
+                }
+            }
         }
     }
 
@@ -172,13 +191,21 @@ async function getMainInventory() {
                 if (item.icon_url) {
                     iconCache.set(item.market_hash_name, item.icon_url);
                 }
+
+                // Extract stickers from description if available (tricky for main inventory without GC, but we can try parsing descriptions)
+                // For now, main inventory stickers are less critical as we often don't get GC data for them unless we inspect. 
+                // However, the user wants stickers.
+                // TODO: Main inventory sticker parsing from descriptions if needed.
+
                 return {
                     market_hash_name: item.market_hash_name,
                     asset_id: item.assetid,
                     casket_id: null,
+                    casket_name: null,
                     float_value: null,
                     paint_seed: null,
-                    icon_url: item.icon_url || null
+                    icon_url: item.icon_url || null,
+                    stickers: null // Main inventory via web API doesn't give easy structured sticker data without inspecting
                 };
             });
 
@@ -272,7 +299,15 @@ async function refresh() {
 
         // Save history snapshot
         const historyService = require('./historyService');
-        historyService.saveSnapshot(totalValue, items.length);
+        const changeInfo = historyService.get24hChange(totalValue);
+
+        // Safety check: Don't save if value drops >80% suddenly (likely price fetch error)
+        // Unless it's the very first run (no yesterday value)
+        if (changeInfo.hasData && totalValue < (changeInfo.yesterdayValue * 0.2)) {
+            console.warn(`[History] SKIPPING SNAPSHOT: Calculated value €${totalValue.toFixed(2)} is suspiciously low compared to yesterday (€${changeInfo.yesterdayValue.toFixed(2)}). Preserving history.`);
+        } else {
+            historyService.saveSnapshot(totalValue, items.length);
+        }
 
         lastRefresh = new Date();
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);

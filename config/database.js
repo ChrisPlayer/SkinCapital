@@ -65,6 +65,13 @@ async function init() {
 
     // Add icon_url column if not present (migration for existing DBs)
     try { db.run('ALTER TABLE items ADD COLUMN icon_url TEXT'); } catch (e) { /* already exists */ }
+
+    // Add stickers column if not present
+    try { db.run('ALTER TABLE items ADD COLUMN stickers TEXT'); } catch (e) { /* already exists */ }
+
+    // Add casket_name column - NEW
+    try { db.run('ALTER TABLE items ADD COLUMN casket_name TEXT'); } catch (e) { /* already exists */ }
+
     try { db.run('ALTER TABLE items ADD COLUMN schema_image TEXT'); } catch (e) { /* already exists */ }
 
     saveToFile();
@@ -138,8 +145,8 @@ function getItemsFromCasket(casketId) {
 
 function insertItem(item) {
     return run(
-        `INSERT INTO items (market_hash_name, asset_id, casket_id, float_value, paint_seed, icon_url, schema_image) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [item.market_hash_name, item.asset_id, item.casket_id, item.float_value, item.paint_seed, item.icon_url || null, item.schema_image || null]
+        `INSERT INTO items (market_hash_name, asset_id, casket_id, casket_name, float_value, paint_seed, icon_url, stickers, schema_image) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [item.market_hash_name, item.asset_id, item.casket_id, item.casket_name || null, item.float_value, item.paint_seed, item.icon_url || null, item.stickers ? JSON.stringify(item.stickers) : null, item.schema_image || null]
     );
 }
 

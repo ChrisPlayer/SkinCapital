@@ -91,60 +91,39 @@ function get24hChange(currentValue) {
 }
 
 /**
- * Get items with significant price changes
- * @param {number} thresholdPercent - Minimum change percentage
- * @returns {Array} Items with price alerts
+ * Calculate 24h price change for a specific item
+ * @param {string} marketHashName - Item name
+ * @param {number} currentPrice - Current price
+ * @returns {Object} Change info
  */
-function getPriceAlerts(thresholdPercent = 5) {
+function getItem24hChange(marketHashName, currentPrice) {
     try {
-        const alerts = [];
-
-        // Get items with old and new prices - simplified query
+        // Get average price from 24h-48h ago
         const rows = db.all(`
-            SELECT 
-                market_hash_name,
-                price_eur as current_price,
-                source
+            SELECT AVG(price_eur) as avg_price
             FROM prices 
-            WHERE timestamp > datetime('now', '-1 hour')
-            GROUP BY market_hash_name
-        `);
+            WHERE market_hash_name = ? 
+            AND timestamp < datetime('now', '-20 hours')
+            AND timestamp > datetime('now', '-48 hours')
+        `, [marketHashName]);
 
-        // For each item, check if we have older prices to compare
-        for (const row of rows) {
-            const oldPrices = db.all(`
-                SELECT AVG(price_eur) as avg_price
-                FROM prices 
-                WHERE market_hash_name = ? 
-                AND timestamp < datetime('now', '-1 day')
-                AND timestamp > datetime('now', '-2 days')
-            `, [row.market_hash_name]);
+        if (rows.length > 0 && rows[0].avg_price) {
+            const oldPrice = rows[0].avg_price;
+            const change = currentPrice - oldPrice;
+            const percentage = (change / oldPrice) * 100;
 
-            if (oldPrices.length > 0 && oldPrices[0].avg_price && row.current_price) {
-                const oldAvg = oldPrices[0].avg_price;
-                const change = row.current_price - oldAvg;
-                const percentage = (change / oldAvg) * 100;
-
-                if (Math.abs(percentage) >= thresholdPercent) {
-                    alerts.push({
-                        market_hash_name: row.market_hash_name,
-                        current_price: row.current_price,
-                        old_price: oldAvg,
-                        change,
-                        percentage,
-                        direction: percentage > 0 ? 'up' : 'down'
-                    });
-                }
-            }
+            return {
+                change,
+                percentage,
+                hasData: true,
+                oldPrice
+            };
         }
 
-        // Sort by absolute percentage change
-        alerts.sort((a, b) => Math.abs(b.percentage) - Math.abs(a.percentage));
-
-        return alerts;
+        return { change: 0, percentage: 0, hasData: false };
     } catch (err) {
-        console.error('[History] Failed to get price alerts:', err.message);
-        return [];
+        console.error(`[History] Failed to get item 24h change for ${marketHashName}:`, err.message);
+        return { change: 0, percentage: 0, hasData: false };
     }
 }
 
@@ -153,5 +132,5 @@ module.exports = {
     getHistory,
     getItemHistory,
     get24hChange,
-    getPriceAlerts
+    getItem24hChange
 };

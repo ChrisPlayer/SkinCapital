@@ -1,13 +1,16 @@
 import { Router } from 'express';
 import { getHistory } from './history.service.ts';
-import { requireAuth } from '../auth/auth.middleware.ts';
 
 const router = Router();
 
-router.get('/history', requireAuth, (req, res) => {
+router.get('/history', (req, res) => {
   try {
+    const steamId = req.query.steamId as string;
+    if (!steamId) {
+      return res.status(400).json({ error: 'steamId query parameter required' });
+    }
     const days = parseInt(req.query.days as string) || 30;
-    const data = getHistory(days);
+    const data = getHistory(steamId, days);
     res.json(data);
   } catch {
     res.status(500).json({ error: 'Failed to fetch history' });

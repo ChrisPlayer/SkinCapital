@@ -3,18 +3,18 @@ import { getOldAveragePrice } from '../../db/queries/prices.ts';
 import { logger } from '../../lib/logger.ts';
 import type { ChangeInfo, HistoryPoint } from '../../../shared/types/api.ts';
 
-export function saveSnapshot(totalValue: number, itemCount: number) {
+export function saveSnapshot(steamId: string, totalValue: number, itemCount: number) {
   try {
-    historyQueries.saveSnapshot(totalValue, itemCount);
-    logger.info(`[History] Saved snapshot: \u20ac${totalValue.toFixed(2)}, ${itemCount} items`);
+    historyQueries.saveSnapshot(steamId, totalValue, itemCount);
+    logger.info(`[History] Saved snapshot for ${steamId}: \u20ac${totalValue.toFixed(2)}, ${itemCount} items`);
   } catch (err) {
     logger.error('[History] Failed to save snapshot:', (err as Error).message);
   }
 }
 
-export function getHistory(days: number = 30): HistoryPoint[] {
+export function getHistory(steamId: string, days: number = 30): HistoryPoint[] {
   try {
-    const records = historyQueries.getHistory(days);
+    const records = historyQueries.getHistory(steamId, days);
     return records.map((r) => ({
       date: r.timestamp,
       value: r.total_value,
@@ -26,9 +26,9 @@ export function getHistory(days: number = 30): HistoryPoint[] {
   }
 }
 
-export function get24hChange(currentValue: number): ChangeInfo {
+export function get24hChange(steamId: string, currentValue: number): ChangeInfo {
   try {
-    const yesterday = historyQueries.getYesterdayValue();
+    const yesterday = historyQueries.getYesterdayValue(steamId);
 
     if (!yesterday) {
       return { change: 0, percentage: 0, hasData: false };

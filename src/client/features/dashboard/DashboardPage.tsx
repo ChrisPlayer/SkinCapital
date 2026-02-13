@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/tabs.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { Skeleton } from '../../components/ui/skeleton.tsx';
@@ -13,20 +13,35 @@ import { useAuth } from '../auth/useAuth.ts';
 import { useDashboardData, useRefreshInventory } from '../../hooks/useApi.ts';
 import { useRefreshPolling } from '../../hooks/usePolling.ts';
 import { formatEur } from '../../lib/formatters.ts';
-import { RefreshCw, LogOut, Loader2 } from 'lucide-react';
+import { RefreshCw, LogOut, Loader2, ArrowLeft, LogIn } from 'lucide-react';
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const { steamId } = useParams<{ steamId: string }>();
   const { logout, status } = useAuth();
   const [days, setDays] = useState(30);
-  const { data, isLoading } = useDashboardData(days);
-  const refreshMutation = useRefreshInventory();
   const { isRefreshing } = useRefreshPolling();
+  const { data, isLoading } = useDashboardData(steamId!, days, isRefreshing);
+  const refreshMutation = useRefreshInventory();
+
+  const isOwner = status?.isLoggedIn && status?.steamId === steamId;
 
   const handleLogout = async () => {
     await logout.mutateAsync();
-    navigate('/');
   };
+
+  const handleRefresh = () => {
+    if (isOwner) {
+      refreshMutation.mutate();
+    } else {
+      navigate('/login');
+    }
+  };
+
+  if (!steamId) {
+    navigate('/');
+    return null;
+  }
 
   if (isLoading || !data) {
     return (
@@ -53,25 +68,32 @@ export function DashboardPage() {
         <div className="max-w-[1600px] mx-auto px-6 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-cs-orange to-cs-purple rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-2xl cursor-default">&#128049;</span>
-              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => navigate('/')}
+                className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10"
+                title="Retour"
+              >
+                <ArrowLeft className="w-5 h-5 text-gray-400" />
+              </Button>
               <div>
                 <h1 className="text-lg font-bold bg-gradient-to-r from-cs-orange to-cs-pink bg-clip-text text-transparent tracking-tight">
                   CS2 Inventory Tracker
                 </h1>
                 <p className="text-[11px] text-gray-500 flex items-center gap-2">
-                  {status?.isConnectedToGC ? (
+                  <span className="font-mono">{steamId}</span>
+                  {isOwner && status?.isConnectedToGC ? (
                     <span className="flex items-center gap-1">
                       <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
                       GC Online
                     </span>
-                  ) : (
+                  ) : isOwner ? (
                     <span className="flex items-center gap-1 text-yellow-400">
                       <span className="w-1.5 h-1.5 bg-yellow-400 rounded-full" />
                       GC Offline
                     </span>
-                  )}
+                  ) : null}
                 </p>
               </div>
             </div>
@@ -86,7 +108,7 @@ export function DashboardPage() {
                 </p>
               </div>
 
-              <ExportButton />
+              <ExportButton steamId={steamId} />
 
               {isRefreshing ? (
                 <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center">
@@ -96,23 +118,29 @@ export function DashboardPage() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => refreshMutation.mutate()}
+                  onClick={handleRefresh}
                   className="w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10"
-                  title="Rafraichir"
+                  title={isOwner ? 'Rafraichir' : 'Se connecter pour rafraichir'}
                 >
-                  <RefreshCw className="w-5 h-5 text-gray-400" />
+                  {isOwner ? (
+                    <RefreshCw className="w-5 h-5 text-gray-400" />
+                  ) : (
+                    <LogIn className="w-5 h-5 text-gray-400" />
+                  )}
                 </Button>
               )}
 
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleLogout}
-                className="w-10 h-10 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500"
-                title="Deconnexion"
-              >
-                <LogOut className="w-5 h-5" />
-              </Button>
+              {isOwner && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleLogout}
+                  className="w-10 h-10 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-500"
+                  title="Deconnexion"
+                >
+                  <LogOut className="w-5 h-5" />
+                </Button>
+              )}
             </div>
           </div>
         </div>

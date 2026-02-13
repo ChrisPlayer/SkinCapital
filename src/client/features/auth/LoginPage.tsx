@@ -6,19 +6,14 @@ import { Button } from '../../components/ui/button.tsx';
 import { Label } from '../../components/ui/label.tsx';
 import { SteamGuardForm } from './SteamGuardForm.tsx';
 import { useAuth } from './useAuth.ts';
-import { Lock, User, Shield, LogIn } from 'lucide-react';
+import { Lock, User, Shield, LogIn, ArrowLeft } from 'lucide-react';
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const { login, steamGuard, isLoggedIn } = useAuth();
+  const { login, steamGuard } = useAuth();
   const [form, setForm] = useState({ username: '', password: '', sharedSecret: '' });
   const [needsSteamGuard, setNeedsSteamGuard] = useState(false);
   const [error, setError] = useState('');
-
-  if (isLoggedIn) {
-    navigate('/dashboard');
-    return null;
-  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,8 +29,8 @@ export function LoginPage() {
       if (result.needsSteamGuard) {
         setNeedsSteamGuard(true);
         setError(result.error || '');
-      } else if (result.success) {
-        navigate('/dashboard');
+      } else if (result.success && result.profile) {
+        navigate(`/profile/${result.profile.steamId}`);
       } else if (result.error) {
         setError(result.error);
       }
@@ -47,8 +42,12 @@ export function LoginPage() {
   const handleSteamGuard = async (code: string) => {
     setError('');
     try {
-      await steamGuard.mutateAsync(code);
-      navigate('/dashboard');
+      const result = await steamGuard.mutateAsync(code);
+      if (result.profile) {
+        navigate(`/profile/${result.profile.steamId}`);
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       setError((err as Error).message);
     }
@@ -142,7 +141,7 @@ export function LoginPage() {
           </Card>
         )}
 
-        <Card className="bg-cs-surface/80 backdrop-blur-xl border-white/10">
+        <Card className="bg-cs-surface/80 backdrop-blur-xl border-white/10 mb-4">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
               <Shield className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
@@ -157,6 +156,15 @@ export function LoginPage() {
             </div>
           </CardContent>
         </Card>
+
+        <Button
+          variant="ghost"
+          onClick={() => navigate('/')}
+          className="w-full text-gray-500 hover:text-white"
+        >
+          <ArrowLeft className="w-4 h-4 mr-2" />
+          Retour aux profils
+        </Button>
       </div>
     </div>
   );

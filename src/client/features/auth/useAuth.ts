@@ -11,6 +11,7 @@ export function useAuth() {
       api.auth.login(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth-status'] });
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
     },
   });
 
@@ -18,6 +19,7 @@ export function useAuth() {
     mutationFn: (code: string) => api.auth.steamGuard(code),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth-status'] });
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
     },
   });
 
@@ -25,7 +27,6 @@ export function useAuth() {
     mutationFn: () => api.auth.logout(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth-status'] });
-      queryClient.clear();
     },
   });
 

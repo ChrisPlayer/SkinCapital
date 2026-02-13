@@ -2,7 +2,8 @@ import { getAllInventory } from '../steam/steam.inventory.ts';
 import { initialize as initSchema } from '../steam/steam.schema.ts';
 import { getCachedPrices, getPrices } from '../pricing/pricing.service.ts';
 import * as historyService from '../history/history.service.ts';
-import { insertItemsBatch, clearAllItems, getAllItems } from '../../db/queries/items.ts';
+import { insertItemsBatch, clearItemsByProfile, getItemsByProfile } from '../../db/queries/items.ts';
+import { updateProfileSummary } from '../../db/queries/profiles.ts';
 import { getAllLatestPrices } from '../../db/queries/prices.ts';
 import { getItemRarity } from '../../../shared/constants/rarity.ts';
 import { getWearLevel } from '../../../shared/constants/wear.ts';
@@ -23,7 +24,7 @@ export function isRefreshInProgress() {
   return isRefreshing;
 }
 
-export async function refresh() {
+export async function refresh(steamId: string) {
   if (isRefreshing) {
     logger.info('[Inventory] Refresh already in progress, skipping');
     return { skipped: true };
@@ -33,14 +34,13 @@ export async function refresh() {
   const startTime = Date.now();
 
   try {
-    logger.info('[Inventory] Starting full refresh...');
+    logger.info(`[Inventory] Starting full refresh for ${steamId}...`);
     await initSchema();
 
     const items = await getAllInventory();
 
-    // Batch insert instead of individual inserts
-    clearAllItems();
-    insertItemsBatch(items);
+    clearItemsByProfile(steamId);
+    insertItemsBatch(items, steamId);
 
     const uniqueNames = [...new Set(items.map((i) => i.marketHashName))];
     logger.info(`[Inventory] Fetching prices for ${uniqueNames.length} unique items...`);
@@ -58,13 +58,15 @@ export async function refresh() {
       }
     }
 
-    const changeInfo = historyService.get24hChange(totalValue);
+    const changeInfo = historyService.get24hChange(steamId, totalValue);
 
     if (changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2) {
       logger.warn(`[History] SKIPPING SNAPSHOT: Calculated value \u20ac${totalValue.toFixed(2)} is suspiciously low compared to yesterday (\u20ac${changeInfo.yesterdayValue.toFixed(2)}). Preserving history.`);
     } else {
-      historyService.saveSnapshot(totalValue, items.length);
+      historyService.saveSnapshot(steamId, totalValue, items.length);
     }
+
+    updateProfileSummary(steamId, items.length, totalValue);
 
     lastRefresh = new Date();
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -79,7 +81,6 @@ export async function refresh() {
   }
 }
 
-// Unified grouping function (fixes 3x duplication in old code)
 function groupItems(
   rawItems: Array<{
     marketHashName: string;
@@ -173,17 +174,17 @@ function getBestImage(
   return null;
 }
 
-export function getDashboardData(days: number = 30): DashboardData {
-  const rawItems = getAllItems();
+export function getDashboardData(steamId: string, days: number = 30): DashboardData {
+  const rawItems = getItemsByProfile(steamId);
 
-  // Build price map from all latest prices (single query, no N+1)
+  // Build price map from all latest prices
   const latestPrices = getAllLatestPrices();
   const priceMap = new Map<string, number | null>();
   for (const p of latestPrices) {
     priceMap.set(p.market_hash_name, p.price_eur);
   }
 
-  // Also compute sticker prices from the price table
+  // Also compute sticker prices
   for (const item of rawItems) {
     const stickers = parseStickers(item.stickers);
     if (stickers) {
@@ -196,19 +197,7 @@ export function getDashboardData(days: number = 30): DashboardData {
     }
   }
 
-  // Build icon and schema maps
-  const iconMap = new Map<string, string>();
-  const schemaMap = new Map<string, string>();
-  for (const item of rawItems) {
-    if (item.iconUrl && !iconMap.has(item.marketHashName)) {
-      iconMap.set(item.marketHashName, item.iconUrl);
-    }
-    if (item.schemaImage && !schemaMap.has(item.marketHashName)) {
-      schemaMap.set(item.marketHashName, item.schemaImage);
-    }
-  }
-
-  // All items grouped (overview)
+  // All items grouped
   const allGrouped = groupItems(rawItems, priceMap);
   const totalValue = allGrouped.reduce((sum, g) => sum + g.total, 0);
 
@@ -239,7 +228,7 @@ export function getDashboardData(days: number = 30): DashboardData {
   storageUnits.sort((a, b) => b.totalValue - a.totalValue);
 
   // History
-  const historyData = historyService.getHistory(days);
+  const historyData = historyService.getHistory(steamId, days);
   const dailyHistory: DailyHistoryEntry[] = historyData
     .map((day, index) => {
       let change = 0;
@@ -253,7 +242,7 @@ export function getDashboardData(days: number = 30): DashboardData {
     })
     .reverse();
 
-  const change24h = historyService.get24hChange(totalValue);
+  const change24h = historyService.get24hChange(steamId, totalValue);
 
   return {
     items: allGrouped,

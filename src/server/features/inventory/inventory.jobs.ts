@@ -9,9 +9,12 @@ export function setupCronJobs(intervalMinutes: number) {
   cron.schedule(schedule, async () => {
     if (!steamClient.isLoggedIn) return;
 
-    logger.info('[Cron] Scheduled refresh triggered');
+    const steamId = steamClient.steamUser?.steamID?.getSteamID64();
+    if (!steamId) return;
+
+    logger.info(`[Cron] Scheduled refresh triggered for ${steamId}`);
     try {
-      await refresh();
+      await refresh(steamId);
     } catch (err) {
       logger.error('[Cron] Refresh failed:', (err as Error).message);
     }

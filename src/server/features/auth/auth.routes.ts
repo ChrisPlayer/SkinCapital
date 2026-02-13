@@ -2,9 +2,11 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { steamClient } from '../steam/steam.client.ts';
 import { refresh } from '../inventory/inventory.service.ts';
-import { encryptCredential, decryptCredential } from './auth.service.ts';
+import { encryptCredential } from './auth.service.ts';
 import { authLimiter } from '../../middleware/security.ts';
+import { upsertProfile } from '../../db/queries/profiles.ts';
 import { logger } from '../../lib/logger.ts';
+import type { Profile } from '../../../shared/types/api.ts';
 
 const router = Router();
 
@@ -17,6 +19,18 @@ const loginSchema = z.object({
 const steamGuardSchema = z.object({
   code: z.string().min(1).max(10),
 });
+
+function rowToProfile(row: { id: number; steam_id: string; username: string; avatar_url: string | null; item_count: number; total_value: number; last_refresh: string | null }): Profile {
+  return {
+    id: row.id,
+    steamId: row.steam_id,
+    username: row.username,
+    avatarUrl: row.avatar_url,
+    itemCount: row.item_count,
+    totalValue: row.total_value,
+    lastRefresh: row.last_refresh,
+  };
+}
 
 router.post('/login', authLimiter, async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
@@ -40,18 +54,16 @@ router.post('/login', authLimiter, async (req, res) => {
 
     logger.info('[Auth] Login successful');
 
-    // Regenerate session after login
-    req.session.regenerate((err) => {
-      if (err) logger.error('[Auth] Session regeneration error:', err);
-    });
+    const steamId = steamClient.steamUser!.steamID!.getSteamID64();
+    const profileRow = upsertProfile(steamId, username);
 
     delete req.session.credentials;
 
-    refresh().catch((err) => {
+    refresh(steamId).catch((err) => {
       logger.error('[Auth] Initial refresh error:', (err as Error).message);
     });
 
-    res.json({ success: true });
+    res.json({ success: true, profile: rowToProfile(profileRow) });
   } catch (err) {
     const message = (err as Error).message;
     logger.error('[Auth] Login failed:', message);
@@ -75,26 +87,26 @@ router.post('/steamguard', authLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Invalid code' });
   }
 
-  const credentials = req.session.credentials;
-  if (!credentials) {
-    return res.status(400).json({ error: 'Session expired, please login again' });
-  }
-
   try {
-    const password = decryptCredential(credentials.password);
     const code = parsed.data.code.toUpperCase();
+    await steamClient.submitSteamGuardCode(code);
 
-    steamClient.steamUser!.once('steamGuard', (_domain: string, callback: (code: string) => void) => {
-      callback(code);
-    });
+    logger.info('[Auth] Steam Guard login successful');
 
-    await steamClient.login(credentials.username, password, code);
+    const steamId = steamClient.steamUser!.steamID!.getSteamID64();
+    const username = req.session.credentials?.username || 'Unknown';
+    const profileRow = upsertProfile(steamId, username);
 
     delete req.session.credentials;
     delete req.session.needsSteamGuard;
 
-    res.json({ success: true });
-  } catch {
+    refresh(steamId).catch((err) => {
+      logger.error('[Auth] Initial refresh error:', (err as Error).message);
+    });
+
+    res.json({ success: true, profile: rowToProfile(profileRow) });
+  } catch (err) {
+    logger.error('[Auth] Steam Guard failed:', (err as Error).message);
     res.status(401).json({ error: 'Invalid Steam Guard code' });
   }
 });

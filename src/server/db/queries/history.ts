@@ -6,31 +6,36 @@ export interface HistoryRow {
   timestamp: string;
 }
 
-export function getHistory(days: number = 30): HistoryRow[] {
+export function getHistory(steamId: string, days: number = 30): HistoryRow[] {
   const sqlite = getSqlite();
   return sqlite
     .prepare(
       `SELECT total_value, item_count, timestamp FROM history
-       WHERE timestamp > date('now', '-' || ? || ' days')
+       WHERE steam_id = ? AND timestamp > date('now', '-' || ? || ' days')
        ORDER BY timestamp ASC`,
     )
-    .all(days.toString()) as HistoryRow[];
+    .all(steamId, days.toString()) as HistoryRow[];
 }
 
-export function saveSnapshot(totalValue: number, itemCount: number) {
+export function saveSnapshot(steamId: string, totalValue: number, itemCount: number) {
   const sqlite = getSqlite();
   sqlite
     .prepare(
-      `INSERT OR REPLACE INTO history (total_value, item_count, timestamp) VALUES (?, ?, date('now'))`,
+      `INSERT OR REPLACE INTO history (steam_id, total_value, item_count, timestamp)
+       VALUES (?, ?, ?, date('now'))`,
     )
-    .run(totalValue, itemCount);
+    .run(steamId, totalValue, itemCount);
 }
 
-export function getYesterdayValue(): { total_value: number } | undefined {
+export function getYesterdayValue(steamId: string): { total_value: number } | undefined {
   const sqlite = getSqlite();
   return sqlite
-    .prepare(`SELECT total_value FROM history WHERE timestamp = date('now', '-1 day') LIMIT 1`)
-    .get() as { total_value: number } | undefined;
+    .prepare(
+      `SELECT total_value FROM history
+       WHERE steam_id = ? AND timestamp = date('now', '-1 day')
+       LIMIT 1`,
+    )
+    .get(steamId) as { total_value: number } | undefined;
 }
 
 export function getItemPriceHistory(

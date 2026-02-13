@@ -8,15 +8,17 @@ export function useRefreshPolling(onComplete?: () => void) {
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
+  const wasRefreshingRef = useRef(false);
   const isRefreshing = data?.isRefreshing ?? false;
 
   useEffect(() => {
-    if (data && !isRefreshing) {
+    if (wasRefreshingRef.current && !isRefreshing) {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
       onCompleteRef.current?.();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRefreshing]);
+    wasRefreshingRef.current = isRefreshing;
+  }, [isRefreshing, queryClient]);
 
   return {
     isRefreshing,

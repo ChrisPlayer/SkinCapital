@@ -9,6 +9,7 @@ let community: SteamCommunity | null = null;
 let csgoClient: GlobalOffensive | null = null;
 let _isLoggedIn = false;
 let _isConnectedToGC = false;
+let _steamGuardCallback: ((code: string) => void) | null = null;
 
 function init() {
   steamUser = new SteamUser({
@@ -96,6 +97,14 @@ function login(
       clearTimeout(loginTimeout);
     });
 
+    steamUser!.once('steamGuard', (_domain: string | null, callback: (code: string) => void) => {
+      clearTimeout(loginTimeout);
+      clearTimeout(gcTimeout);
+      _steamGuardCallback = callback;
+      logger.info('[Steam] Steam Guard code requested');
+      reject(new Error('SteamGuard code required'));
+    });
+
     steamUser!.once('error', (err: Error) => {
       clearTimeout(loginTimeout);
       clearTimeout(gcTimeout);
@@ -109,6 +118,46 @@ function login(
     });
 
     steamUser!.logOn(loginOptions);
+  });
+}
+
+function submitSteamGuardCode(code: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (!_steamGuardCallback) {
+      reject(new Error('No Steam Guard callback pending'));
+      return;
+    }
+
+    const loginTimeout = setTimeout(() => {
+      reject(new Error('Steam Guard login timeout after 30 seconds'));
+    }, 30000);
+
+    const gcTimeout = setTimeout(() => {
+      if (_isLoggedIn && !_isConnectedToGC) {
+        logger.warn('[CS2] GC connection timeout, continuing without GC');
+        resolve();
+      }
+    }, 60000);
+
+    steamUser!.once('loggedOn', () => {
+      clearTimeout(loginTimeout);
+    });
+
+    steamUser!.once('error', (err: Error) => {
+      clearTimeout(loginTimeout);
+      clearTimeout(gcTimeout);
+      reject(err);
+    });
+
+    csgoClient!.once('connectedToGC', () => {
+      clearTimeout(gcTimeout);
+      logger.info('[CS2] Ready to fetch inventory');
+      resolve();
+    });
+
+    logger.info('[Steam] Submitting Steam Guard code...');
+    _steamGuardCallback(code);
+    _steamGuardCallback = null;
   });
 }
 
@@ -148,6 +197,7 @@ function waitForGC(timeoutMs = 30000): Promise<boolean> {
 export const steamClient = {
   init,
   login,
+  submitSteamGuardCode,
   logout,
   getStatus,
   waitForGC,

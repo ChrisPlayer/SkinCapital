@@ -2,7 +2,11 @@ import { Button } from '../../components/ui/button.tsx';
 import { api } from '../../lib/api-client.ts';
 import { Download } from 'lucide-react';
 
-export function ExportButton() {
+interface ExportButtonProps {
+  steamId: string;
+}
+
+export function ExportButton({ steamId }: ExportButtonProps) {
   return (
     <Button
       variant="ghost"
@@ -11,7 +15,7 @@ export function ExportButton() {
       title="Exporter CSV"
       asChild
     >
-      <a href={api.export.csvUrl()} download>
+      <a href={api.export.csvUrl(steamId)} download>
         <Download className="w-5 h-5 text-gray-400" />
       </a>
     </Button>

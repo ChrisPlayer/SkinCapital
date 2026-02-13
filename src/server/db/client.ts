@@ -33,10 +33,25 @@ export function initDb() {
 
   _db = drizzle(sqlite, { schema });
 
-  // Create tables if they don't exist
+  // Profiles table
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      steam_id TEXT UNIQUE NOT NULL,
+      username TEXT NOT NULL,
+      avatar_url TEXT,
+      item_count INTEGER DEFAULT 0,
+      total_value REAL DEFAULT 0,
+      last_refresh TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Items table
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      steam_id TEXT,
       market_hash_name TEXT NOT NULL,
       asset_id TEXT,
       casket_id TEXT,
@@ -51,6 +66,7 @@ export function initDb() {
     )
   `);
 
+  // Prices table (unchanged)
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS prices (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,21 +77,56 @@ export function initDb() {
     )
   `);
 
+  // History table
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      steam_id TEXT,
       total_value REAL NOT NULL,
       item_count INTEGER NOT NULL,
-      timestamp DATE UNIQUE DEFAULT (date('now'))
+      timestamp DATE DEFAULT (date('now'))
     )
   `);
 
-  // Create indexes
-  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_items_market_hash ON items(market_hash_name)`);
-  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_items_casket ON items(casket_id)`);
-  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_prices_name ON prices(market_hash_name)`);
-  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_prices_timestamp ON prices(timestamp)`);
-  sqlite.exec(`CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp)`);
+  // Migration: add steam_id to items if missing
+  const itemCols = sqlite.pragma('table_info(items)') as Array<{ name: string }>;
+  if (!itemCols.some((c) => c.name === 'steam_id')) {
+    sqlite.exec('ALTER TABLE items ADD COLUMN steam_id TEXT');
+  }
+
+  // Migration: add steam_id to history if missing (recreate for compound unique)
+  const historyCols = sqlite.pragma('table_info(history)') as Array<{ name: string }>;
+  if (!historyCols.some((c) => c.name === 'steam_id')) {
+    sqlite.exec('ALTER TABLE history RENAME TO history_old');
+    sqlite.exec(`
+      CREATE TABLE history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        steam_id TEXT,
+        total_value REAL NOT NULL,
+        item_count INTEGER NOT NULL,
+        timestamp DATE DEFAULT (date('now'))
+      )
+    `);
+    try {
+      sqlite.exec(
+        'INSERT INTO history (total_value, item_count, timestamp) SELECT total_value, item_count, timestamp FROM history_old',
+      );
+    } catch {
+      /* ignore migration errors */
+    }
+    sqlite.exec('DROP TABLE IF EXISTS history_old');
+  }
+
+  // Indexes
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_items_market_hash ON items(market_hash_name)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_items_casket ON items(casket_id)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_items_steam_id ON items(steam_id)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_prices_name ON prices(market_hash_name)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_prices_timestamp ON prices(timestamp)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp)');
+  sqlite.exec(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_history_steam_date ON history(steam_id, timestamp)',
+  );
 
   // Cleanup old data
   sqlite.exec(`DELETE FROM history WHERE timestamp < date('now', '-90 days')`);

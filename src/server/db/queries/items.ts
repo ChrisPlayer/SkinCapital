@@ -15,26 +15,32 @@ export interface InsertItem {
   schemaImage: string | null;
 }
 
+export function getItemsByProfile(steamId: string) {
+  const db = getDb();
+  return db
+    .select()
+    .from(items)
+    .where(eq(items.steamId, steamId))
+    .orderBy(items.marketHashName)
+    .all();
+}
+
 export function getAllItems() {
   const db = getDb();
   return db.select().from(items).orderBy(items.marketHashName).all();
 }
 
-export function getItemsByCasket(casketId: string) {
-  const db = getDb();
-  return db.select().from(items).where(eq(items.casketId, casketId)).all();
-}
-
-export function insertItemsBatch(itemList: InsertItem[]) {
+export function insertItemsBatch(itemList: InsertItem[], steamId: string) {
   const sqlite = getSqlite();
   const stmt = sqlite.prepare(`
-    INSERT INTO items (market_hash_name, asset_id, casket_id, casket_name, float_value, paint_seed, icon_url, stickers, schema_image)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO items (steam_id, market_hash_name, asset_id, casket_id, casket_name, float_value, paint_seed, icon_url, stickers, schema_image)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const transaction = sqlite.transaction((list: InsertItem[]) => {
     for (const item of list) {
       stmt.run(
+        steamId,
         item.marketHashName,
         item.assetId,
         item.casketId,
@@ -49,6 +55,11 @@ export function insertItemsBatch(itemList: InsertItem[]) {
   });
 
   transaction(itemList);
+}
+
+export function clearItemsByProfile(steamId: string) {
+  const sqlite = getSqlite();
+  sqlite.prepare('DELETE FROM items WHERE steam_id = ?').run(steamId);
 }
 
 export function clearAllItems() {

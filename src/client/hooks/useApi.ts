@@ -10,11 +10,23 @@ export function useAuthStatus() {
   });
 }
 
-export function useDashboardData(days: number = 30) {
+export function useProfiles() {
   return useQuery({
-    queryKey: ['dashboard', days],
-    queryFn: () => api.dashboard(days),
-    refetchInterval: 60000,
+    queryKey: ['profiles'],
+    queryFn: () => api.profiles.list(),
+  });
+}
+
+export function useDashboardData(
+  steamId: string,
+  days: number = 30,
+  isRefreshing: boolean = false,
+) {
+  return useQuery({
+    queryKey: ['dashboard', steamId, days],
+    queryFn: () => api.dashboard(steamId, days),
+    enabled: !!steamId,
+    refetchInterval: isRefreshing ? 5000 : 60000,
   });
 }
 

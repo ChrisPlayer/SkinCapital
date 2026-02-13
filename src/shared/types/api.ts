@@ -4,6 +4,16 @@ import type { ItemGroup, StorageUnit, WearLevel, Rarity, Price } from './invento
 export type { AuthStatus, LoginRequest, SteamGuardRequest };
 export type { ItemGroup, StorageUnit, WearLevel, Rarity, Price };
 
+export interface Profile {
+  id: number;
+  steamId: string;
+  username: string;
+  avatarUrl: string | null;
+  itemCount: number;
+  totalValue: number;
+  lastRefresh: string | null;
+}
+
 export interface DashboardData {
   items: ItemGroup[];
   mainInventory: {

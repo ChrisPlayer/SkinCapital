@@ -1,13 +1,17 @@
 import { Router } from 'express';
-import { getAllItems } from '../../db/queries/items.ts';
+import { getItemsByProfile } from '../../db/queries/items.ts';
 import { getCachedPrices } from '../pricing/pricing.service.ts';
-import { requireAuth } from '../auth/auth.middleware.ts';
 
 const router = Router();
 
-router.get('/export/csv', requireAuth, (_req, res) => {
+router.get('/export/csv', (req, res) => {
   try {
-    const items = getAllItems();
+    const steamId = req.query.steamId as string;
+    if (!steamId) {
+      return res.status(400).json({ error: 'steamId query parameter required' });
+    }
+
+    const items = getItemsByProfile(steamId);
     const headers = ['Item', 'Qty', 'Storage Unit', 'Float', 'Steam Price EUR', 'Total EUR'];
 
     const grouped: Record<string, {
@@ -47,7 +51,7 @@ router.get('/export/csv', requireAuth, (_req, res) => {
     }
 
     const csv = rows.join('\n');
-    const filename = `cs2-inventory-${new Date().toISOString().split('T')[0]}.csv`;
+    const filename = `cs2-inventory-${steamId}-${new Date().toISOString().split('T')[0]}.csv`;
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);

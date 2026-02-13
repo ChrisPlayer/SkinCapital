@@ -1,221 +1,111 @@
-# CS2 Inventory Tracker v2.0
+# CS2 Inventory Tracker v2
 
-Application web moderne pour monitorer en temps réel l'inventaire Counter-Strike 2 d'un utilisateur Steam, avec support des Storage Units (caskets) et suivi des prix multi-sources.
+Tracker d'inventaire CS2 avec support Storage Units, suivi des prix Steam Market et historique de valeur.
 
-![Dashboard Preview](https://img.shields.io/badge/CS2-Inventory%20Tracker-orange?style=for-the-badge)
+**Stack** : Express + TypeScript / React + Vite / SQLite (better-sqlite3 + Drizzle) / shadcn/ui + Tailwind
 
-## ✨ Fonctionnalités
-
-- 📦 **Storage Units** - Récupération prioritaire des items dans les caskets CS2 via Game Coordinator
-- 💰 **Multi-sources prix** - Steam Market avec smart cache (20h TTL)
-- 📊 **Historique** - Graphiques d'évolution de valeur (7/30/90 jours)
-- 🎨 **UI moderne** - React + shadcn/ui avec thème sombre CS2
-- 🔍 **Recherche & Tri** - Recherche temps réel, tri par prix/rareté/float
-- 📤 **Export CSV** - Téléchargement de l'inventaire complet
-- ⏰ **Auto-refresh** - Mise à jour automatique configurable
-- 🔐 **Sécurité** - Chiffrement AES-256-GCM, rate limiting, helmet
-
-## 🚀 Stack Technique
-
-### Backend
-- **Express + TypeScript** - API REST avec validation Zod
-- **better-sqlite3 + Drizzle ORM** - Base de données performante (WAL mode)
-- **Steam libraries** - steam-user, globaloffensive, steamcommunity
-
-### Frontend
-- **React + Vite** - Interface moderne avec hot-reload
-- **shadcn/ui + Tailwind CSS** - Composants UI accessibles
-- **TanStack React Query** - Data fetching avec cache
-- **Recharts** - Graphiques interactifs
-
-## 📦 Installation
-
-### Prérequis
-
-- Node.js v20 ou supérieur
-- Compte Steam avec Steam Guard Mobile Authenticator activé
-- npm ou pnpm
-
-### Étapes
-
-1. **Cloner le projet**
+## Quick Start
 
 ```bash
-git clone <repo-url>
-cd cs2-inventory-tracker
-```
-
-2. **Installer les dépendances**
-
-```bash
+# 1. Installer
 npm install
-```
 
-3. **Configurer l'environnement**
-
-```bash
+# 2. Configurer
 cp .env.example .env
-```
+# Editer .env : mettre un vrai SESSION_SECRET (voir .env.example pour la commande)
 
-Éditer le fichier `.env` :
-
-```env
-PORT=3000
-REFRESH_INTERVAL=10
-SESSION_SECRET=<générer-une-clé-longue-aléatoire>
-```
-
-> ⚠️ **SESSION_SECRET** : Utilisez une clé forte (32+ caractères) pour chiffrer les credentials
-
-4. **Lancer l'application**
-
-**Mode développement** (hot-reload) :
-```bash
+# 3. Dev (hot-reload frontend + backend)
 npm run dev
+
+# 4. Ouvrir http://localhost:5173
 ```
 
-**Mode production** :
+En production :
+
 ```bash
 npm run build
 npm start
+# Ouvrir http://localhost:3000
 ```
 
-5. **Ouvrir le dashboard**
+## Configuration (.env)
 
-Naviguer vers [http://localhost:3000](http://localhost:3000)
+| Variable | Description | Defaut |
+|---|---|---|
+| `PORT` | Port du serveur Express | `3000` |
+| `REFRESH_INTERVAL` | Auto-refresh inventaire (minutes) | `10` |
+| `SESSION_SECRET` | Cle de chiffrement AES-256-GCM pour les credentials Steam en session | - |
+| `NODE_ENV` | `development` ou `production` | `development` |
+| `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
 
-Au premier lancement, vous serez invité à vous connecter avec :
-- Username Steam
-- Mot de passe Steam
-- Code Steam Guard (si nécessaire)
-
-## 📁 Structure du projet
-
-```
-cs2-inventory-tracker/
-├── src/
-│   ├── shared/                  # Types & constantes partagés
-│   │   ├── types/               # Item, StorageUnit, API contracts
-│   │   └── constants/           # Rarity, Wear, Weapons
-│   │
-│   ├── server/                  # Backend Express
-│   │   ├── db/
-│   │   │   ├── schema.ts        # Drizzle schema
-│   │   │   └── queries/         # Requêtes typées
-│   │   ├── features/
-│   │   │   ├── steam/           # Steam client + inventory
-│   │   │   ├── auth/            # Authentification
-│   │   │   ├── inventory/       # Refresh, dashboard data
-│   │   │   ├── pricing/         # Smart cache + market
-│   │   │   ├── history/         # Snapshots & trends
-│   │   │   └── export/          # CSV export
-│   │   ├── middleware/          # Security, session, errors
-│   │   └── lib/                 # Crypto, logger
-│   │
-│   └── client/                  # Frontend React
-│       ├── features/
-│       │   ├── auth/            # Login page
-│       │   ├── dashboard/       # KPIs, chart, history
-│       │   ├── inventory/       # Item cards, modal
-│       │   └── storage-units/   # Collapsible caskets
-│       ├── components/ui/       # shadcn components
-│       ├── hooks/               # useApi, usePolling
-│       └── lib/                 # API client, formatters
-│
-├── data/
-│   ├── inventory.db             # SQLite database
-│   └── item_schema.json         # CS2 item cache
-├── drizzle/                     # SQL migrations
-└── dist/                        # Production build
-```
-
-## ⚙️ Configuration
-
-| Variable | Description | Défaut |
-|----------|-------------|--------|
-| `PORT` | Port du serveur | 3000 |
-| `REFRESH_INTERVAL` | Intervalle refresh en minutes | 10 |
-| `SESSION_SECRET` | Clé de chiffrement des credentials | - |
-
-## 🔧 Scripts npm
+## Scripts
 
 | Commande | Description |
-|----------|-------------|
+|---|---|
 | `npm run dev` | Dev mode (Express + Vite hot-reload) |
 | `npm run build` | Build production (Vite) |
-| `npm start` | Start production server |
-| `npm run typecheck` | Vérification TypeScript |
-| `npm run lint` | ESLint sur tout le code |
-| `npm run db:generate` | Générer migrations Drizzle |
+| `npm start` | Serveur production |
+| `npm run typecheck` | Verification TypeScript |
+| `npm run lint` | ESLint |
+| `npm run db:generate` | Generer migrations Drizzle |
+| `npm run db:migrate` | Appliquer migrations Drizzle |
 
-## 🛠️ Troubleshooting
+## Fonctionnalites
 
-### Erreur "Steam Guard"
-- Vérifiez username/password sur la page de login
-- Entrez le code Steam Guard à 5 chiffres
+- **Storage Units** : lecture des caskets CS2 via Game Coordinator
+- **Prix Steam Market** : cache intelligent (TTL 20h) avec fallback stale
+- **Historique** : graphique d'evolution de valeur (7/30/90 jours)
+- **Recherche & tri** : temps reel, par prix/nom/float
+- **Export CSV** : telechargement de l'inventaire complet
+- **Auto-refresh** : cron configurable
+- **Securite** : chiffrement AES-256-GCM, rate limiting, helmet, cookies httpOnly
 
-### Timeout GC (Game Coordinator)
-- Le GC CS2 peut être instable, l'app retente automatiquement
-- Attendez 30-60 secondes, le statut se met à jour
+## Structure
 
-### Rate Limit 429
-- Steam Market : limite ~20 req/min, l'app attend automatiquement
-- Les prix sont mis en cache 20h (TTL) + fallback stale
+```
+src/
+  shared/          Types & constantes partages (client + server)
+  server/
+    db/            Schema Drizzle + queries SQLite
+    features/
+      auth/        Login Steam, middleware auth
+      steam/       Client Steam + inventaire + schema items
+      inventory/   Refresh, dashboard data, cron jobs
+      pricing/     Steam Market avec queue + cache
+      history/     Snapshots journaliers
+      export/      Export CSV
+    middleware/    Session, security (helmet/cors/rate-limit), error handler
+    lib/           Crypto, logger
+  client/
+    features/
+      auth/        Login page + Steam Guard
+      dashboard/   KPIs, graphique, historique
+      inventory/   Item cards, modal detail, float bar, stickers
+      storage-units/ Caskets collapsibles
+      export/      Bouton export CSV
+    components/ui/ Composants shadcn
+    hooks/         useApi, usePolling
+    lib/           API client, formatters, cn
+data/              SQLite DB + cache schema items
+```
 
-### Storage Units vides
-- Les caskets doivent contenir des items pour être détectés
-- Vérifiez que votre inventaire CS2 est public
+## Troubleshooting
 
-### Base de données corrompue
-- Supprimer `data/inventory.db` et redémarrer
+| Probleme | Solution |
+|---|---|
+| Steam Guard demande | Entrer le code 5 chiffres depuis l'app Steam |
+| Timeout GC | Le Game Coordinator CS2 peut etre instable, l'app retente auto |
+| Rate limit 429 | Steam Market ~20 req/min, l'app gere la queue et le cache |
+| Storage Units vides | Verifier que les caskets contiennent des items |
+| DB corrompue | Supprimer `data/inventory.db` et redemarrer |
+| Port occupe | Changer `PORT` dans `.env` |
 
-### Port 3000 occupé
-- Modifier `PORT` dans `.env`
-- Ou tuer le processus : `npx kill-port 3000`
+## Securite
 
-## 🔐 Sécurité
-
-### Chiffrement
-- Credentials chiffrés AES-256-GCM en session (clé dérivée via scrypt)
+- Credentials chiffres AES-256-GCM en session (cle derivee via scrypt)
 - Cookie httpOnly + sameSite strict
-- Session régénérée après login
-
-### Rate Limiting
-- Auth : 10 tentatives / 15 minutes
-- API : 120 requêtes / minute
-
-### Headers
-- Helmet.js (CSP, HSTS, XSS protection)
-- CORS restreint à localhost en dev
-
-### Best Practices
-- 🔐 **Ne commitez JAMAIS** le fichier `.env`
-- 🧪 **Recommandé** : Utilisez un compte alt pour les tests
-- 📖 **Lecture seule** : L'app ne peut pas modifier votre inventaire
-- ⏱️ **Session longue** : Les connexions 24/7 peuvent déclencher des alertes Steam
-
-## 📊 APIs utilisées
-
-| Source | Endpoint | Rate Limit |
-|--------|----------|------------|
-| Steam Market | `/market/priceoverview` | ~20/min |
-| ByMykel API | `/items-game/csgo/` | Cache 7 jours |
-| Steam CDN | `community.akamai.steamstatic.com` | Illimité |
-
-## 🚧 Améliorations futures
-
-- [ ] Support multi-comptes
-- [ ] Notifications Discord/Telegram
-- [ ] Comparaison prix CSFloat/Skinport
-- [ ] Export Excel avec charts
-- [ ] Dark/Light theme toggle
-- [ ] Mobile responsive optimization
-- [ ] PWA support
-
-## 📝 License
-
-MIT License - Utilisation libre
-
----
-
-**Développé avec ❤️ pour la communauté CS2**
+- Helmet (CSP, HSTS, XSS protection)
+- Rate limiting : 10 tentatives auth / 15min, 120 req API / min
+- **Ne commitez jamais** le fichier `.env`
+- **Lecture seule** : l'app ne peut pas modifier votre inventaire
+- Recommande : utiliser un compte alt pour les tests

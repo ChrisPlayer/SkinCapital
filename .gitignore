@@ -1,5 +1,8 @@
 node_modules/
 .env
-inventory.db
+data/inventory.db
+data/inventory.db-wal
+data/inventory.db-shm
+data/item_schema.json
 .DS_Store
 *.log

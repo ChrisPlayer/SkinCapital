@@ -37,8 +37,29 @@ export function getAllProfiles(): ProfileRow[] {
   const sqlite = getSqlite();
   return sqlite
     .prepare(
-      `SELECT * FROM profiles
-       ORDER BY CASE WHEN last_refresh IS NULL THEN 1 ELSE 0 END, last_refresh DESC`,
+      `SELECT
+        p.id, p.steam_id, p.username, p.persona_name, p.avatar_url,
+        COALESCE(s.item_count, p.item_count, 0) as item_count,
+        COALESCE(s.total_value, p.total_value, 0) as total_value,
+        p.last_refresh, p.created_at
+       FROM profiles p
+       LEFT JOIN (
+         SELECT
+           i.steam_id,
+           COUNT(*) as item_count,
+           SUM(COALESCE(lp.price_eur, 0)) as total_value
+         FROM items i
+         LEFT JOIN (
+           SELECT p1.market_hash_name, p1.price_eur
+           FROM prices p1
+           INNER JOIN (
+             SELECT market_hash_name, MAX(timestamp) as max_ts
+             FROM prices GROUP BY market_hash_name
+           ) p2 ON p1.market_hash_name = p2.market_hash_name AND p1.timestamp = p2.max_ts
+         ) lp ON lp.market_hash_name = i.market_hash_name
+         GROUP BY i.steam_id
+       ) s ON s.steam_id = p.steam_id
+       ORDER BY CASE WHEN p.last_refresh IS NULL THEN 1 ELSE 0 END, p.last_refresh DESC`,
     )
     .all() as ProfileRow[];
 }
@@ -46,7 +67,31 @@ export function getAllProfiles(): ProfileRow[] {
 export function getProfileBySteamId(steamId: string): ProfileRow | undefined {
   const sqlite = getSqlite();
   return sqlite
-    .prepare('SELECT * FROM profiles WHERE steam_id = ?')
+    .prepare(
+      `SELECT
+        p.id, p.steam_id, p.username, p.persona_name, p.avatar_url,
+        COALESCE(s.item_count, p.item_count, 0) as item_count,
+        COALESCE(s.total_value, p.total_value, 0) as total_value,
+        p.last_refresh, p.created_at
+       FROM profiles p
+       LEFT JOIN (
+         SELECT
+           i.steam_id,
+           COUNT(*) as item_count,
+           SUM(COALESCE(lp.price_eur, 0)) as total_value
+         FROM items i
+         LEFT JOIN (
+           SELECT p1.market_hash_name, p1.price_eur
+           FROM prices p1
+           INNER JOIN (
+             SELECT market_hash_name, MAX(timestamp) as max_ts
+             FROM prices GROUP BY market_hash_name
+           ) p2 ON p1.market_hash_name = p2.market_hash_name AND p1.timestamp = p2.max_ts
+         ) lp ON lp.market_hash_name = i.market_hash_name
+         GROUP BY i.steam_id
+       ) s ON s.steam_id = p.steam_id
+       WHERE p.steam_id = ?`,
+    )
     .get(steamId) as ProfileRow | undefined;
 }
 

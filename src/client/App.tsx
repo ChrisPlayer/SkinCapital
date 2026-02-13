@@ -4,6 +4,7 @@ import { I18nProvider } from './lib/i18n.tsx';
 import { LoginPage } from './features/auth/LoginPage.tsx';
 import { DashboardPage } from './features/dashboard/DashboardPage.tsx';
 import { ProfilesPage } from './features/profiles/ProfilesPage.tsx';
+import { SettingsPage } from './features/settings/SettingsPage.tsx';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,6 +24,8 @@ export function App() {
             <Route path="/" element={<ProfilesPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/profile/:steamId" element={<DashboardPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/:steamId" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>

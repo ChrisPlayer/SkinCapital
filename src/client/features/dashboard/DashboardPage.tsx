@@ -6,17 +6,19 @@ import { useRefreshPolling } from '../../hooks/usePolling.ts';
 import { useI18n } from '../../lib/i18n.tsx';
 import { formatEur, formatPercent, formatDate } from '../../lib/formatters.ts';
 import { ItemDetailModal } from '../inventory/ItemDetailModal.tsx';
+import { ItemCard } from '../inventory/ItemCard.tsx';
 import { api } from '../../lib/api-client.ts';
 import {
-  LayoutDashboard, Package, FolderOpen, Eye, LogOut, Users,
+  LayoutDashboard, Package, FolderOpen, LogOut, Users,
   RefreshCw, Loader2, LogIn, Download, Search, ChevronDown,
   ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
-  Activity, DollarSign, Settings,
+  Activity, DollarSign, Settings, LayoutGrid, List,
+  PanelRightClose, PanelRightOpen,
 } from 'lucide-react';
 import type { ItemGroup, StorageUnit } from '../../../shared/types/inventory.ts';
 import type { HistoryPoint, DailyHistoryEntry } from '../../../shared/types/api.ts';
 
-type View = 'dashboard' | 'inventory' | 'storage' | 'overview';
+type View = 'dashboard' | 'inventory' | 'storage';
 
 // ── Helpers ──
 
@@ -63,11 +65,15 @@ function weaponTag(name: string): string {
   return w.substring(0, 3).toUpperCase();
 }
 
-function itemAccent(item: ItemGroup): string {
-  if (item.marketHashName.includes('★')) return '#a020f0';
-  if (item.rarity.name === 'StatTrak') return '#ff3366';
-  if (item.rarity.name === 'Souvenir') return '#FFD700';
-  return '#00ccff';
+function formatPriceWindow(pw: { from: string; to: string }, locale: string): string {
+  const loc = locale === 'fr' ? 'fr-FR' : 'en-US';
+  const from = new Date(pw.from + (pw.from.includes('Z') ? '' : 'Z'));
+  const to = new Date(pw.to + (pw.to.includes('Z') ? '' : 'Z'));
+  const datePart = to.toLocaleDateString(loc, { day: 'numeric', month: 'short' });
+  const fromTime = from.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', hour12: false });
+  const toTime = to.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit', hour12: false });
+  if (fromTime === toTime) return `${datePart} ${fromTime}`;
+  return `${datePart} ${fromTime}–${toTime}`;
 }
 
 const PER_PAGE = 30;
@@ -78,14 +84,16 @@ export function DashboardPage() {
   const { steamId } = useParams<{ steamId: string }>();
   const navigate = useNavigate();
   const { status, logout } = useAuth();
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale } = useI18n();
   const [view, setView] = useState<View>('dashboard');
   const [days, setDays] = useState(30);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'price' | 'name' | 'float'>('price');
   const [page, setPage] = useState(1);
   const [selectedItem, setSelectedItem] = useState<ItemGroup | null>(null);
-  const [showSettings, setShowSettings] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
+  const [includeStorage, setIncludeStorage] = useState(false);
+  const [showFeed, setShowFeed] = useState(true);
   const { isRefreshing, lastRefresh } = useRefreshPolling();
   const { data, isLoading } = useDashboardData(steamId!, days, isRefreshing);
   const refreshMutation = useRefreshInventory();
@@ -112,7 +120,6 @@ export function DashboardPage() {
     { id: 'dashboard', icon: LayoutDashboard, label: t('nav.dashboard') },
     { id: 'inventory', icon: Package, label: `${t('nav.inventory')} (${data.mainInventory.count})` },
     { id: 'storage', icon: FolderOpen, label: `${t('nav.storageUnits')} (${data.storageUnits.length})` },
-    { id: 'overview', icon: Eye, label: `${t('nav.allAssets')} (${data.uniqueItems})` },
   ];
 
   const switchView = (v: View) => { setView(v); setSearch(''); setPage(1); };
@@ -127,18 +134,24 @@ export function DashboardPage() {
     return r;
   };
 
-  const listItems = view === 'inventory' ? data.mainInventory.items : view === 'overview' ? data.items : [];
+  const listItems = view === 'inventory'
+    ? (includeStorage ? data.items : data.mainInventory.items)
+    : [];
   const filtered = filterSort(listItems);
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   const paginated = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  const inventoryTotal = includeStorage ? data.totalValue : data.mainInventory.total;
 
   const handleRefreshInventory = () => { if (isOwner) refreshMutation.mutate(); else navigate('/login'); };
   const handleRefreshPrices = () => { if (steamId) refreshPricesMutation.mutate(steamId); };
   const handleLogout = async () => { await logout.mutateAsync(); };
 
+  const feedCols = showFeed ? 'xl:grid-cols-[260px_1fr_360px]' : 'xl:grid-cols-[260px_1fr]';
+
   return (
     <>
-      <div className="h-screen grid grid-cols-1 md:grid-cols-[260px_1fr] xl:grid-cols-[260px_1fr_340px] overflow-hidden">
+      <div className={`h-screen grid grid-cols-1 md:grid-cols-[260px_1fr] ${feedCols} overflow-hidden`}>
 
         {/* ═══════ SIDEBAR ═══════ */}
         <aside className="sf-sidebar hidden md:flex flex-col py-8 px-6">
@@ -161,7 +174,7 @@ export function DashboardPage() {
             <button className="sf-nav-item" onClick={() => navigate('/')}>
               <Users className="w-4 h-4" /> {t('nav.profiles')}
             </button>
-            <button className="sf-nav-item" onClick={() => setShowSettings(!showSettings)}>
+            <button className="sf-nav-item" onClick={() => navigate(steamId ? `/settings/${steamId}` : '/settings')}>
               <Settings className="w-4 h-4" /> {t('nav.settings')}
             </button>
             {isOwner && (
@@ -170,27 +183,6 @@ export function DashboardPage() {
               </button>
             )}
           </nav>
-
-          {/* Settings panel */}
-          {showSettings && (
-            <div className="mt-4 p-4 rounded-xl border border-white/[0.08] bg-sf-card">
-              <div className="nav-label mb-3">{t('settings.language')}</div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setLocale('fr')}
-                  className={`flex-1 py-2 rounded-lg font-mono text-xs transition-all ${locale === 'fr' ? 'bg-sf-cyan/20 text-sf-cyan border border-sf-cyan/30' : 'bg-white/5 text-sf-secondary hover:text-white'}`}
-                >
-                  {t('settings.french')}
-                </button>
-                <button
-                  onClick={() => setLocale('en')}
-                  className={`flex-1 py-2 rounded-lg font-mono text-xs transition-all ${locale === 'en' ? 'bg-sf-cyan/20 text-sf-cyan border border-sf-cyan/30' : 'bg-white/5 text-sf-secondary hover:text-white'}`}
-                >
-                  {t('settings.english')}
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="mt-auto p-5 rounded-xl border border-dashed border-sf-cyan/20 bg-sf-cyan/[0.03]">
             <div className="nav-label mb-1">{t('dashboard.netValuation')}</div>
@@ -221,38 +213,48 @@ export function DashboardPage() {
           </div>
 
           {/* Header */}
-          <header className="hidden md:flex flex-wrap justify-between items-end mb-10 relative z-10 gap-4">
+          <header className="hidden md:flex flex-wrap justify-between items-center mb-8 relative z-10 gap-4">
             <div>
-              <h1 className="font-display text-3xl font-bold mb-1">
+              <h1 className="font-display text-2xl font-bold mb-0.5">
                 {view === 'dashboard' && t('dashboard.marketOverview')}
                 {view === 'inventory' && t('dashboard.inventory')}
                 {view === 'storage' && t('dashboard.storageUnits')}
-                {view === 'overview' && t('dashboard.allAssets')}
               </h1>
-              <span className="font-mono text-xs text-sf-dim">{t('dashboard.userSession')} // {steamId}</span>
+              <span className="font-mono text-xs text-gray-500">{steamId}</span>
             </div>
             <div className="flex items-center gap-2">
               {isRefreshing ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-sf-cyan/10 border border-sf-cyan/20">
-                  <Loader2 className="w-3 h-3 animate-spin text-sf-cyan" />
-                  <span className="font-mono text-[10px] text-sf-cyan uppercase">{t('dashboard.syncing')}</span>
+                <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-sf-cyan/10 border border-sf-cyan/20">
+                  <Loader2 className="w-4 h-4 animate-spin text-sf-cyan" />
+                  <span className="font-mono text-xs text-sf-cyan uppercase">{t('dashboard.syncing')}</span>
                 </div>
               ) : (
                 <>
-                  <button onClick={handleRefreshPrices} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors font-mono text-[10px] uppercase text-sf-secondary hover:text-white" title={t('dashboard.refreshPricesTooltip')}>
-                    <DollarSign className="w-3 h-3" />
-                    {t('dashboard.refreshPrices')}
+                  <button onClick={handleRefreshPrices} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-xs text-gray-400 hover:text-white" title={t('dashboard.refreshPricesTooltip')}>
+                    <DollarSign className="w-4 h-4" />
+                    <span className="hidden lg:inline">{t('dashboard.refreshPrices')}</span>
                   </button>
-                  <button onClick={handleRefreshInventory} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors font-mono text-[10px] uppercase text-sf-secondary hover:text-white" title={t('dashboard.refreshInventoryTooltip')}>
-                    {isOwner ? <RefreshCw className="w-3 h-3" /> : <LogIn className="w-3 h-3" />}
-                    {isOwner ? t('dashboard.refreshInventory') : t('auth.login')}
+                  <button onClick={handleRefreshInventory} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-xs text-gray-400 hover:text-white" title={t('dashboard.refreshInventoryTooltip')}>
+                    {isOwner ? <RefreshCw className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+                    <span className="hidden lg:inline">{isOwner ? t('dashboard.refreshInventory') : t('auth.login')}</span>
                   </button>
                 </>
               )}
-              <a href={api.export.csvUrl(steamId!)} download className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-                <Download className="w-3 h-3 text-sf-secondary" />
+              <a href={api.export.csvUrl(steamId!)} download className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 transition-colors">
+                <Download className="w-4 h-4 text-gray-400" />
               </a>
-              <span className="sf-tag text-sf-dim">{new Date().toLocaleDateString(locale === 'fr' ? 'fr-FR' : 'en-US', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+              {data.priceWindow && (
+                <span className="sf-tag text-gray-500" title={t('dashboard.priceWindowTooltip')}>
+                  {formatPriceWindow(data.priceWindow, locale)}
+                </span>
+              )}
+              <button
+                onClick={() => setShowFeed(!showFeed)}
+                className="hidden xl:flex items-center justify-center w-10 h-10 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
+                title={showFeed ? 'Hide panel' : 'Show panel'}
+              >
+                {showFeed ? <PanelRightClose className="w-4 h-4 text-gray-400" /> : <PanelRightOpen className="w-4 h-4 text-gray-400" />}
+              </button>
             </div>
           </header>
 
@@ -264,7 +266,7 @@ export function DashboardPage() {
               <>
                 <section className="sf-card p-6 grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-6 mb-8">
                   <div>
-                    <div className="nav-label mb-2">{t('dashboard.portfolioPerformance')}</div>
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{t('dashboard.portfolioPerformance')}</div>
                     <div className="text-3xl font-bold mb-1">
                       {formatEur(data.totalValue)}
                       {data.change24h.hasData && (
@@ -274,11 +276,11 @@ export function DashboardPage() {
                       )}
                     </div>
                     <div className="grid grid-cols-2 gap-4 mt-6">
-                      <div><div className="nav-label mb-1">{t('dashboard.totalItems')}</div><div className="font-mono text-base">{data.totalItems}</div></div>
-                      <div><div className="nav-label mb-1">{t('nav.storageUnits')}</div><div className="font-mono text-base text-sf-purple">{data.storageUnits.length}</div></div>
-                      <div><div className="nav-label mb-1">{t('dashboard.uniqueItems')}</div><div className="font-mono text-base">{data.uniqueItems}</div></div>
+                      <div><div className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">{t('dashboard.totalItems')}</div><div className="font-mono text-base">{data.totalItems}</div></div>
+                      <div><div className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">{t('nav.storageUnits')}</div><div className="font-mono text-base text-sf-purple">{data.storageUnits.length}</div></div>
+                      <div><div className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">{t('dashboard.uniqueItems')}</div><div className="font-mono text-base">{data.uniqueItems}</div></div>
                       <div>
-                        <div className="nav-label mb-1">{t('dashboard.var24h')}</div>
+                        <div className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">{t('dashboard.var24h')}</div>
                         <div className={`font-mono text-base ${data.change24h.hasData ? (data.change24h.percentage >= 0 ? 'text-sf-green' : 'text-sf-pink') : 'text-sf-dim'}`}>
                           {data.change24h.hasData ? formatPercent(data.change24h.percentage) : '\u2014'}
                         </div>
@@ -298,20 +300,20 @@ export function DashboardPage() {
                         <path d={chart.line} fill="none" stroke="#00ccff" strokeWidth="3" style={{ filter: 'drop-shadow(0 0 8px rgba(0,204,255,0.5))' }} />
                       </svg>
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-sf-dim font-mono text-xs">{t('dashboard.noChartData')}</div>
+                      <div className="w-full h-full flex items-center justify-center text-gray-500 font-mono text-xs">{t('dashboard.noChartData')}</div>
                     )}
                   </div>
                 </section>
 
                 <div className="flex items-center justify-between mb-4">
-                  <span className="nav-label">{t('dashboard.topAssets')}</span>
+                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('dashboard.topAssets')}</span>
                   <div className="flex gap-1">
                     {[7, 30, 90].map((d) => (
-                      <button key={d} onClick={() => setDays(d)} className={`px-3 py-1 rounded-lg font-mono text-xs transition-all ${days === d ? 'bg-sf-cyan/20 text-sf-cyan' : 'text-sf-dim hover:text-sf-secondary'}`}>{d}J</button>
+                      <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 rounded-lg font-mono text-xs transition-all ${days === d ? 'bg-sf-cyan/20 text-sf-cyan' : 'text-gray-500 hover:text-gray-300'}`}>{d}J</button>
                     ))}
                   </div>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {data.items.slice(0, 8).map((item) => (
                     <AssetRow key={item.marketHashName} item={item} onClick={() => setSelectedItem(item)} />
                   ))}
@@ -319,17 +321,17 @@ export function DashboardPage() {
               </>
             )}
 
-            {/* ─── INVENTORY / OVERVIEW VIEW ─── */}
-            {(view === 'inventory' || view === 'overview') && (
+            {/* ─── INVENTORY VIEW ─── */}
+            {view === 'inventory' && (
               <>
                 <div className="flex items-center gap-3 mb-6 flex-wrap">
                   <div className="relative flex-1 min-w-[200px] max-w-sm">
-                    <Search className="w-4 h-4 text-sf-dim absolute left-3 top-1/2 -translate-y-1/2" />
+                    <Search className="w-4 h-4 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
                     <input
                       value={search}
                       onChange={(e) => { setSearch(e.target.value); setPage(1); }}
                       placeholder={t('search.placeholder')}
-                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-sf-card border border-white/[0.08] text-sm text-white placeholder:text-sf-dim focus:outline-none focus:border-sf-cyan/40"
+                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-sf-card border border-white/[0.08] text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-sf-cyan/40"
                     />
                   </div>
                   <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className="h-10 rounded-xl border border-white/[0.08] bg-sf-card px-3 text-sm text-white">
@@ -337,19 +339,50 @@ export function DashboardPage() {
                     <option value="name">{t('sort.name')}</option>
                     <option value="float">{t('sort.float')}</option>
                   </select>
+                  <div className="flex rounded-xl border border-white/[0.08] overflow-hidden">
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`w-10 h-10 flex items-center justify-center transition-colors ${viewMode === 'list' ? 'bg-sf-cyan/20 text-sf-cyan' : 'bg-sf-card text-gray-500 hover:text-white'}`}
+                      title={t('view.list')}
+                    >
+                      <List className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setViewMode('cards')}
+                      className={`w-10 h-10 flex items-center justify-center transition-colors ${viewMode === 'cards' ? 'bg-sf-cyan/20 text-sf-cyan' : 'bg-sf-card text-gray-500 hover:text-white'}`}
+                      title={t('view.cards')}
+                    >
+                      <LayoutGrid className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { setIncludeStorage(!includeStorage); setPage(1); }}
+                    className={`h-10 px-4 rounded-xl text-xs transition-all flex items-center gap-2 ${includeStorage ? 'bg-sf-purple/15 text-sf-purple border border-sf-purple/30' : 'bg-white/5 text-gray-400 hover:text-white border border-white/[0.08]'}`}
+                  >
+                    <FolderOpen className="w-3.5 h-3.5" />
+                    {t('inventory.includeStorage')}
+                  </button>
                   <span className="ml-auto font-mono text-sm text-sf-cyan font-bold">
-                    {formatEur(view === 'inventory' ? data.mainInventory.total : data.totalValue)}
+                    {formatEur(inventoryTotal)}
                   </span>
                 </div>
 
-                <div className="space-y-2">
-                  {paginated.map((item) => (
-                    <AssetRow key={item.marketHashName} item={item} onClick={() => setSelectedItem(item)} />
-                  ))}
-                </div>
+                {viewMode === 'list' ? (
+                  <div className="space-y-1.5">
+                    {paginated.map((item) => (
+                      <AssetRow key={item.marketHashName} item={item} onClick={() => setSelectedItem(item)} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {paginated.map((item) => (
+                      <ItemCard key={item.marketHashName} item={item} onClick={() => setSelectedItem(item)} />
+                    ))}
+                  </div>
+                )}
 
                 {filtered.length === 0 && (
-                  <div className="sf-card p-8 text-center font-mono text-sm text-sf-dim">{t('empty.noResults')}</div>
+                  <div className="sf-card p-8 text-center font-mono text-sm text-gray-500">{t('empty.noResults')}</div>
                 )}
 
                 {totalPages > 1 && (
@@ -375,7 +408,7 @@ export function DashboardPage() {
             {view === 'storage' && (
               <div className="space-y-4">
                 {data.storageUnits.length === 0 ? (
-                  <div className="sf-card p-8 text-center font-mono text-sm text-sf-dim">{t('empty.noStorageUnits')}</div>
+                  <div className="sf-card p-8 text-center font-mono text-sm text-gray-500">{t('empty.noStorageUnits')}</div>
                 ) : data.storageUnits.map((unit) => (
                   <StorageSection key={unit.casketId} unit={unit} onItemClick={setSelectedItem} />
                 ))}
@@ -385,8 +418,11 @@ export function DashboardPage() {
         </main>
 
         {/* ═══════ ACTIVITY FEED ═══════ */}
-        <aside className="sf-feed hidden xl:block overflow-y-auto px-6 py-10">
-          <ActivityFeed data={data} isRefreshing={isRefreshing} lastRefresh={lastRefresh} /></aside>
+        {showFeed && (
+          <aside className="sf-feed hidden xl:block overflow-y-auto px-6 py-10">
+            <ActivityFeed data={data} isRefreshing={isRefreshing} lastRefresh={lastRefresh} />
+          </aside>
+        )}
       </div>
 
       <ItemDetailModal item={selectedItem} open={!!selectedItem} onOpenChange={(open) => { if (!open) setSelectedItem(null); }} />
@@ -397,25 +433,48 @@ export function DashboardPage() {
 // ── Sub-Components ──
 
 function AssetRow({ item, onClick }: { item: ItemGroup; onClick: () => void }) {
-  const accent = itemAccent(item);
   const tag = weaponTag(item.marketHashName);
-  const sub = item.wear ? `${item.wear.name} // ${item.floatValue?.toFixed(4)}` : item.rarity.name;
+  const rarityColor = item.rarity.color;
 
   return (
-    <div className="asset-row" onClick={onClick}>
+    <div className="asset-row" onClick={onClick} style={{ borderLeftColor: rarityColor, borderLeftWidth: '3px' }}>
+      {/* Quantity column — always present, shows from x2+ */}
+      <div className="text-center font-mono text-sm font-bold text-white/70">
+        {item.quantity > 1 ? `x${item.quantity}` : ''}
+      </div>
+
+      {/* Image */}
       {item.imageUrl ? (
-        <img src={item.imageUrl} alt={item.marketHashName} className="w-10 h-10 rounded-lg bg-[#1c1d24] object-contain" style={{ border: `1px solid ${accent}33` }} />
+        <img src={item.imageUrl} alt="" className="w-14 h-14 rounded-lg bg-[#1c1d24] object-contain p-0.5" />
       ) : (
-        <div className="w-10 h-10 rounded-lg bg-[#1c1d24] flex items-center justify-center font-mono text-[11px] font-bold" style={{ color: accent, border: `1px solid ${accent}33` }}>
+        <div className="w-14 h-14 rounded-lg bg-[#1c1d24] flex items-center justify-center font-mono text-xs font-bold text-gray-500">
           {tag}
         </div>
       )}
-      <div className="pl-3 min-w-0">
-        <div className="font-semibold text-[14px] truncate">{item.marketHashName}</div>
-        <div className="text-xs text-sf-secondary mt-0.5 truncate">{sub}{item.quantity > 1 ? ` // x${item.quantity}` : ''}</div>
+
+      {/* Name + wear tag */}
+      <div className="pl-3 min-w-0 overflow-hidden">
+        <div className="font-semibold text-sm truncate">{item.marketHashName}</div>
+        <div className="flex items-center gap-2 mt-1">
+          {item.wear && (
+            <span
+              className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold"
+              style={{ color: item.wear.color, background: `${item.wear.color}20` }}
+            >
+              {item.wear.short}
+            </span>
+          )}
+          {item.floatValue !== null && (
+            <span className="text-[10px] text-gray-500 font-mono">{item.floatValue.toFixed(4)}</span>
+          )}
+        </div>
       </div>
-      <div className="font-mono text-right font-medium text-sm">{formatEur(item.price)}</div>
-      <div className={`font-mono text-xs text-right ${item.total > 0 ? 'text-sf-green' : 'text-sf-dim'}`}>
+
+      {/* Unit price */}
+      <div className="font-mono text-right font-semibold text-sm">{formatEur(item.price)}</div>
+
+      {/* Total (if quantity > 1) */}
+      <div className={`font-mono text-xs text-right ${item.total > 0 ? 'text-sf-green' : 'text-gray-600'}`}>
         {item.quantity > 1 ? formatEur(item.total) : ''}
       </div>
     </div>
@@ -433,16 +492,16 @@ function StorageSection({ unit, onItemClick }: { unit: StorageUnit; onItemClick:
           </div>
           <div>
             <p className="font-semibold text-sm">{unit.name}</p>
-            <p className="text-xs text-sf-secondary font-mono mt-0.5">...{unit.shortId} // {unit.itemCount} items</p>
+            <p className="text-xs text-gray-500 font-mono mt-0.5">...{unit.shortId} // {unit.itemCount} items</p>
           </div>
         </div>
         <div className="flex items-center gap-4">
           <span className="font-mono font-bold text-sf-cyan text-sm">{formatEur(unit.totalValue)}</span>
-          <ChevronDown className={`w-4 h-4 text-sf-dim transition-transform ${open ? '' : '-rotate-90'}`} />
+          <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${open ? '' : '-rotate-90'}`} />
         </div>
       </div>
       {open && (
-        <div className="border-t border-white/[0.08] px-4 pb-4 space-y-2 pt-3">
+        <div className="border-t border-white/[0.08] px-4 pb-4 space-y-1.5 pt-3">
           {unit.items.map((item) => (
             <AssetRow key={item.marketHashName} item={item} onClick={() => onItemClick(item)} />
           ))}
@@ -454,6 +513,8 @@ function StorageSection({ unit, onItemClick }: { unit: StorageUnit; onItemClick:
 
 function ActivityFeed({ data, isRefreshing, lastRefresh }: { data: import('../../../shared/types/api.ts').DashboardData; isRefreshing: boolean; lastRefresh: string | null }) {
   const { t } = useI18n();
+  const [showAlerts, setShowAlerts] = useState(true);
+  const [showHistory, setShowHistory] = useState(true);
 
   // Generate price alerts from significant price changes only
   const priceAlerts = data.items
@@ -498,30 +559,30 @@ function ActivityFeed({ data, isRefreshing, lastRefresh }: { data: import('../..
       {/* ── SYSTEM STATUS ── */}
       {(isRefreshing || lastRefresh) && (
         <>
-          <h3 className="nav-label mb-4">{t('feed.system')}</h3>
+          <h3 className="feed-section-title">{t('feed.system')}</h3>
           <div className="relative pl-8 mb-8">
             <div className="timeline-line" />
             {isRefreshing && (
               <div className="relative mb-6">
                 <div className="timeline-dot" style={{ borderColor: '#00ccff', boxShadow: '0 0 10px #00ccff' }} />
-                <span className="font-mono text-[11px] text-sf-dim mb-2 block">{t('feed.nowSync')}</span>
+                <span className="font-mono text-[11px] text-gray-500 mb-2 block">{t('feed.nowSync')}</span>
                 <div className="bg-sf-card rounded-xl p-4 border border-sf-cyan/20">
-                  <div className="flex items-center gap-2 text-[13px] font-semibold text-sf-cyan mb-1">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('feed.syncingTitle')}
+                  <div className="flex items-center gap-2 text-sm font-semibold text-sf-cyan mb-1">
+                    <Loader2 className="w-4 h-4 animate-spin" /> {t('feed.syncingTitle')}
                   </div>
-                  <div className="text-xs text-sf-secondary">{t('feed.syncingDesc')}</div>
+                  <div className="text-xs text-gray-400">{t('feed.syncingDesc')}</div>
                 </div>
               </div>
             )}
             {lastRefresh && !isRefreshing && (
               <div className="relative mb-6">
                 <div className="timeline-dot" style={{ borderColor: '#4ADE80', boxShadow: '0 0 10px #4ADE80' }} />
-                <span className="font-mono text-[11px] text-sf-dim mb-2 block">{new Date(lastRefresh).toLocaleTimeString('fr-FR')} // SYSTEM</span>
+                <span className="font-mono text-[11px] text-gray-500 mb-2 block">{new Date(lastRefresh).toLocaleTimeString('fr-FR')}</span>
                 <div className="bg-sf-card rounded-xl p-4 border border-white/[0.08]">
-                  <div className="flex items-center gap-2 text-[13px] font-semibold text-sf-green mb-1">
-                    <Activity className="w-3.5 h-3.5" /> {t('feed.syncComplete')}
+                  <div className="flex items-center gap-2 text-sm font-semibold text-sf-green mb-1">
+                    <Activity className="w-4 h-4" /> {t('feed.syncComplete')}
                   </div>
-                  <div className="text-xs text-sf-secondary">
+                  <div className="text-xs text-gray-400">
                     {data.totalItems} {t('feed.itemsSynced')} &middot; {t('feed.portfolio')}: <span className="font-mono text-white">{formatEur(data.totalValue)}</span>
                   </div>
                 </div>
@@ -532,77 +593,93 @@ function ActivityFeed({ data, isRefreshing, lastRefresh }: { data: import('../..
       )}
 
       {/* ── PRICE ALERTS ── */}
-      <h3 className="nav-label mb-4">{t('alerts.title')}</h3>
-      <div className="relative pl-8 mb-8">
-        <div className="absolute left-0 top-0 bottom-0 w-[2px] opacity-30" style={{ background: 'linear-gradient(180deg, #ff3366 0%, #4ADE80 50%, transparent 100%)' }} />
-        {priceAlerts.length > 0 ? priceAlerts.map(({ item, tag, label, icon, colors, change, pct }, i) => (
-          <div key={item.marketHashName} className="relative mb-5" style={{ opacity: i > 3 ? 0.5 : 1 }}>
-            <div className="timeline-dot" style={{ borderColor: colors.dot, boxShadow: `0 0 8px ${colors.dot}` }} />
-            <span className="font-mono text-[11px] text-sf-dim mb-1.5 block">{tag} // STEAM_MKT</span>
-            <div className={`${colors.bg} rounded-xl p-3.5 border ${colors.border}`}>
-              <div className="flex items-center justify-between mb-1">
-                <div className={`flex items-center gap-1.5 text-[11px] font-semibold ${colors.text}`}>
-                  {icon} {label}
+      <button
+        className="feed-section-title w-full flex items-center justify-between cursor-pointer hover:text-gray-300 transition-colors mb-4"
+        onClick={() => setShowAlerts(!showAlerts)}
+      >
+        <span>{t('alerts.title')}</span>
+        <ChevronDown className={`w-4 h-4 transition-transform ${showAlerts ? '' : '-rotate-90'}`} />
+      </button>
+      {showAlerts && (
+        <div className="relative pl-8 mb-8">
+          <div className="absolute left-0 top-0 bottom-0 w-[2px] opacity-30" style={{ background: 'linear-gradient(180deg, #ff3366 0%, #4ADE80 50%, transparent 100%)' }} />
+          {priceAlerts.length > 0 ? priceAlerts.map(({ item, tag, label, icon, colors, change, pct }, i) => (
+            <div key={item.marketHashName} className="relative mb-5" style={{ opacity: i > 3 ? 0.5 : 1 }}>
+              <div className="timeline-dot" style={{ borderColor: colors.dot, boxShadow: `0 0 8px ${colors.dot}` }} />
+              <span className="font-mono text-[11px] text-gray-500 mb-1.5 block">{tag}</span>
+              <div className={`${colors.bg} rounded-xl p-3.5 border ${colors.border}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <div className={`flex items-center gap-1.5 text-xs font-semibold ${colors.text}`}>
+                    {icon} {label}
+                  </div>
+                  <div className="text-right">
+                    <span className="font-mono text-xs font-bold text-white">{formatEur(item.price)}</span>
+                    <span className={`font-mono text-[10px] ml-2 ${change > 0 ? 'text-sf-green' : 'text-sf-pink'}`}>
+                      {change > 0 ? '+' : ''}{formatEur(change)} ({formatPercent(pct)})
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className="font-mono text-xs font-bold text-white">{formatEur(item.price)}</span>
-                  <span className={`font-mono text-[10px] ml-2 ${change > 0 ? 'text-sf-green' : 'text-sf-pink'}`}>
-                    {change > 0 ? '+' : ''}{formatEur(change)} ({formatPercent(pct)})
-                  </span>
-                </div>
+                <div className="text-xs text-gray-400 truncate">{item.marketHashName}</div>
+                {item.quantity > 1 && <div className="text-[10px] text-gray-500 font-mono mt-1">x{item.quantity} &middot; Total: {formatEur(item.total)}</div>}
               </div>
-              <div className="text-xs text-sf-secondary truncate">{item.marketHashName}</div>
-              {item.quantity > 1 && <div className="text-[10px] text-sf-dim font-mono mt-1">x{item.quantity} &middot; Total: {formatEur(item.total)}</div>}
             </div>
-          </div>
-        )) : (
-          <div className="relative mb-5">
-            <div className="timeline-dot" style={{ borderColor: '#444c56', opacity: 0.5 }} />
-            <div className="bg-sf-card rounded-xl p-4 border border-dashed border-white/[0.06] opacity-50">
-              <div className="text-[13px] font-semibold text-sf-dim mb-1">{t('alerts.noAlerts')}</div>
-              <div className="text-xs text-sf-secondary">{t('alerts.noAlertsDesc')}</div>
+          )) : (
+            <div className="relative mb-5">
+              <div className="timeline-dot" style={{ borderColor: '#444c56', opacity: 0.5 }} />
+              <div className="bg-sf-card rounded-xl p-4 border border-dashed border-white/[0.06]">
+                <div className="text-sm font-semibold text-gray-500 mb-1">{t('alerts.noAlerts')}</div>
+                <div className="text-xs text-gray-500">{t('alerts.noAlertsDesc')}</div>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {/* ── DAILY HISTORY ── */}
-      <h3 className="nav-label mb-4">{t('history.title')}</h3>
-      <div className="relative pl-8">
-        <div className="timeline-line" />
-        {data.dailyHistory.length > 0 ? data.dailyHistory.map((entry, i) => {
-          const up = entry.change >= 0;
-          const color = entry.change !== 0 ? (up ? '#4ADE80' : '#ff3366') : '#444c56';
-          return (
-            <div key={i} className="relative mb-6" style={{ opacity: i > 6 ? 0.4 : 1 }}>
-              <div className="timeline-dot" style={{ borderColor: color, boxShadow: `0 0 8px ${color}` }} />
-              <span className="font-mono text-[11px] text-sf-dim mb-1.5 block">{formatDate(entry.date)} // {t('history.valuation')}</span>
-              <div className={`bg-sf-card rounded-xl p-3.5 border ${i > 6 ? 'border-dashed border-white/[0.06]' : 'border-white/[0.08]'}`}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-mono text-sm font-bold text-white">{formatEur(entry.value)}</span>
-                  <span className="text-[10px] text-sf-dim font-mono">{entry.itemCount} items</span>
-                </div>
-                {entry.change !== 0 ? (
-                  <div className={`flex items-center gap-1 text-xs font-mono ${up ? 'text-sf-green' : 'text-sf-pink'}`}>
-                    {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                    {up ? '+' : ''}{formatEur(entry.change)} ({formatPercent(entry.changePercent)})
+      <button
+        className="feed-section-title w-full flex items-center justify-between cursor-pointer hover:text-gray-300 transition-colors mb-4"
+        onClick={() => setShowHistory(!showHistory)}
+      >
+        <span>{t('history.title')}</span>
+        <ChevronDown className={`w-4 h-4 transition-transform ${showHistory ? '' : '-rotate-90'}`} />
+      </button>
+      {showHistory && (
+        <div className="relative pl-8">
+          <div className="timeline-line" />
+          {data.dailyHistory.length > 0 ? data.dailyHistory.map((entry, i) => {
+            const up = entry.change >= 0;
+            const color = entry.change !== 0 ? (up ? '#4ADE80' : '#ff3366') : '#444c56';
+            return (
+              <div key={i} className="relative mb-5" style={{ opacity: i > 6 ? 0.4 : 1 }}>
+                <div className="timeline-dot" style={{ borderColor: color, boxShadow: `0 0 8px ${color}` }} />
+                <span className="font-mono text-[11px] text-gray-500 mb-1.5 block">{formatDate(entry.date)}</span>
+                <div className={`bg-sf-card rounded-xl p-3.5 border ${i > 6 ? 'border-dashed border-white/[0.06]' : 'border-white/[0.08]'}`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-sm font-bold text-white">{formatEur(entry.value)}</span>
+                    <span className="text-[11px] text-gray-500 font-mono">{entry.itemCount} items</span>
                   </div>
-                ) : (
-                  <div className="text-xs text-sf-dim font-mono">{t('history.noChange')}</div>
-                )}
+                  {entry.change !== 0 ? (
+                    <div className={`flex items-center gap-1 text-xs font-mono ${up ? 'text-sf-green' : 'text-sf-pink'}`}>
+                      {up ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                      {up ? '+' : ''}{formatEur(entry.change)} ({formatPercent(entry.changePercent)})
+                    </div>
+                  ) : (
+                    <div className="text-xs text-gray-500 font-mono">{t('history.noChange')}</div>
+                  )}
+                </div>
+              </div>
+            );
+          }) : (
+            <div className="relative mb-5">
+              <div className="timeline-dot" style={{ borderColor: '#444c56', opacity: 0.5 }} />
+              <div className="bg-sf-card rounded-xl p-4 border border-dashed border-white/[0.06]">
+                <div className="text-sm font-semibold text-gray-500 mb-1">{t('history.noHistory')}</div>
+                <div className="text-xs text-gray-500">{t('history.noHistoryDesc')}</div>
               </div>
             </div>
-          );
-        }) : (
-          <div className="relative mb-5">
-            <div className="timeline-dot" style={{ borderColor: '#444c56', opacity: 0.5 }} />
-            <div className="bg-sf-card rounded-xl p-4 border border-dashed border-white/[0.06] opacity-50">
-              <div className="text-[13px] font-semibold text-sf-dim mb-1">{t('history.noHistory')}</div>
-              <div className="text-xs text-sf-secondary">{t('history.noHistoryDesc')}</div>
-            </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
     </>
   );
 }

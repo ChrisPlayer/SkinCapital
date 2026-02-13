@@ -53,6 +53,7 @@ const translations = {
   'dashboard.refreshPricesTooltip': { fr: 'Rafraichir les prix (sans connexion Steam)', en: 'Refresh prices (no Steam login needed)' },
   'dashboard.refreshInventory': { fr: 'Refresh Inventaire', en: 'Refresh Inventory' },
   'dashboard.refreshInventoryTooltip': { fr: 'Rafraichir l\'inventaire (necessite connexion Steam)', en: 'Refresh inventory (requires Steam login)' },
+  'dashboard.priceWindowTooltip': { fr: 'Fenetre de mise a jour des prix', en: 'Price update window' },
 
   // ── Dashboard KPIs ──
   'dashboard.portfolioPerformance': { fr: 'PERFORMANCE_PORTFOLIO', en: 'PORTFOLIO_PERFORMANCE' },
@@ -132,6 +133,14 @@ const translations = {
   'settings.language': { fr: 'Langue', en: 'Language' },
   'settings.french': { fr: 'Francais', en: 'French' },
   'settings.english': { fr: 'Anglais', en: 'English' },
+  'settings.back': { fr: 'Retour', en: 'Back' },
+
+  // ── View toggle ──
+  'view.list': { fr: 'Liste', en: 'List' },
+  'view.cards': { fr: 'Cartes', en: 'Cards' },
+
+  // ── Inventory ──
+  'inventory.includeStorage': { fr: 'Inclure Storage Units', en: 'Include Storage Units' },
 
   // ── Loading ──
   'loading.data': { fr: 'CHARGEMENT...', en: 'LOADING_DATA...' },

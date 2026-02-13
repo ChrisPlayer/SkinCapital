@@ -29,6 +29,7 @@ export interface DashboardData {
   change24h: ChangeInfo;
   historyData: HistoryPoint[];
   dailyHistory: DailyHistoryEntry[];
+  priceWindow: { from: string; to: string } | null;
 }
 
 export interface HistoryPoint {

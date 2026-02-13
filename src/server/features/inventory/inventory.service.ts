@@ -5,7 +5,7 @@ import { getCachedPrices, getPrices } from '../pricing/pricing.service.ts';
 import * as historyService from '../history/history.service.ts';
 import { insertItemsBatch, clearItemsByProfile, getItemsByProfile } from '../../db/queries/items.ts';
 import { updateProfileSummary } from '../../db/queries/profiles.ts';
-import { getAllLatestPrices, getAllPreviousPrices } from '../../db/queries/prices.ts';
+import { getAllLatestPrices, getAllPreviousPrices, getLatestPriceWindow } from '../../db/queries/prices.ts';
 import { getItemRarity } from '../../../shared/constants/rarity.ts';
 import { getWearLevel } from '../../../shared/constants/wear.ts';
 import { logger } from '../../lib/logger.ts';
@@ -305,6 +305,7 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
     .reverse();
 
   const change24h = historyService.get24hChange(steamId, totalValue);
+  const priceWindow = getLatestPriceWindow();
 
   return {
     items: allGrouped,
@@ -316,6 +317,7 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
     change24h,
     historyData,
     dailyHistory,
+    priceWindow,
   };
 }
 
@@ -332,7 +334,7 @@ export async function refreshPrices(steamId: string) {
   let totalValue = 0;
   for (const name of uniqueNames) {
     try {
-      await getPrices(name);
+      await getPrices(name, true);
     } catch (err) {
       logger.error(`[Prices] Price fetch error for ${name}:`, (err as Error).message);
     }

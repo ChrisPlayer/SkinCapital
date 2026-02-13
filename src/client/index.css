@@ -115,18 +115,29 @@
   /* ── Asset rows ── */
   .asset-row {
     display: grid;
-    grid-template-columns: 52px 1fr 110px 90px;
+    grid-template-columns: 48px 60px 1fr 80px 72px;
     align-items: center;
+    gap: 0;
     background: #111216;
-    padding: 14px 20px;
-    border-radius: 16px;
-    border: 1px solid rgba(255,255,255,0.08);
+    padding: 10px 16px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-left: 3px solid transparent;
     cursor: pointer;
     transition: all 0.2s ease;
   }
   .asset-row:hover {
     background: #16171d;
-    border-color: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.12);
+  }
+
+  /* ── Feed section titles ── */
+  .feed-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
   }
 
   /* ── Timeline ── */

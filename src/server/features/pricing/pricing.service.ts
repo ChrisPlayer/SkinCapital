@@ -84,10 +84,10 @@ export function getCachedPrices(marketHashName: string): Price {
   return prices;
 }
 
-export async function getPrices(marketHashName: string): Promise<Price> {
+export async function getPrices(marketHashName: string, force = false): Promise<Price> {
   const cached = getCachedPrices(marketHashName);
 
-  if (cached.average && cached.timestamp) {
+  if (!force && cached.average && cached.timestamp) {
     let cacheTime: Date;
     try {
       cacheTime = new Date(cached.timestamp + (cached.timestamp.includes('Z') ? '' : 'Z'));

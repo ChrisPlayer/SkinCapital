@@ -1,4 +1,3 @@
-import { Badge } from '../../components/ui/badge.tsx';
 import { FloatBar } from './FloatBar.tsx';
 import { StickerRow } from './StickerRow.tsx';
 import { formatEur } from '../../lib/formatters.ts';
@@ -13,16 +12,17 @@ interface ItemCardProps {
 export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
   return (
     <div
-      className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-200 hover:translate-y-[-2px] hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] hover:border-cs-orange/30 group"
+      className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-200 hover:translate-y-[-2px] hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] group"
       onClick={onClick}
+      style={{ borderLeft: `3px solid ${item.rarity.color}` }}
     >
       <div className="flex gap-3">
-        <div className="flex-shrink-0 w-[72px] h-[54px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
+        <div className="flex-shrink-0 w-[88px] h-[66px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
           {item.imageUrl ? (
             <img
               src={item.imageUrl}
               alt=""
-              className="w-[72px] h-[54px] object-contain filter drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform duration-300"
+              className="w-[88px] h-[66px] object-contain filter drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform duration-300"
               loading="lazy"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = 'none';
@@ -36,27 +36,30 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-white truncate group-hover:text-white transition-colors" title={item.marketHashName}>
+              <p className="text-xs font-semibold text-white truncate" title={item.marketHashName}>
                 {item.marketHashName}
               </p>
-              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                <Badge
-                  style={{ background: item.rarity.bg, color: item.rarity.color }}
-                >
-                  {item.rarity.name}
-                </Badge>
+              <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                 {item.wear && (
-                  <span className="text-[10px] font-mono" style={{ color: item.wear.color }}>
+                  <span
+                    className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold"
+                    style={{ color: item.wear.color, background: `${item.wear.color}20` }}
+                  >
                     {item.wear.short}
                   </span>
                 )}
+                {item.floatValue !== null && item.floatValue !== undefined && (
+                  <span className="text-[10px] font-mono text-gray-500">{item.floatValue.toFixed(4)}</span>
+                )}
                 {item.quantity > 1 && (
-                  <Badge>x{item.quantity}</Badge>
+                  <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-white/10 text-white">
+                    x{item.quantity}
+                  </span>
                 )}
                 {showCasketBadge && item.casketIds.length > 0 && (
-                  <Badge className="bg-cs-purple/15 text-cs-purple">
+                  <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono bg-purple-500/15 text-purple-400">
                     SU {item.casketIds.length}
-                  </Badge>
+                  </span>
                 )}
               </div>
             </div>
@@ -75,12 +78,6 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
 
           {item.floatValue !== null && item.floatValue !== undefined && (
             <div className="mt-1.5 opacity-60 hover:opacity-100 transition-opacity">
-              <div className="flex justify-between mb-0.5">
-                {item.wear && (
-                  <span className="text-[10px]" style={{ color: item.wear.color }}>{item.wear.name}</span>
-                )}
-                <span className="text-[10px] font-mono text-gray-500">{item.floatValue.toFixed(8)}</span>
-              </div>
               <FloatBar value={item.floatValue} />
             </div>
           )}

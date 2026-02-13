@@ -78,6 +78,19 @@ export function getAllPreviousPrices(): Map<string, number | null> {
   return map;
 }
 
+export function getLatestPriceWindow(): { from: string; to: string } | null {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .prepare(
+      `SELECT MIN(max_ts) as from_ts, MAX(max_ts) as to_ts FROM (
+         SELECT MAX(timestamp) as max_ts FROM prices GROUP BY market_hash_name
+       )`,
+    )
+    .get() as { from_ts: string | null; to_ts: string | null } | undefined;
+  if (!row?.from_ts || !row?.to_ts) return null;
+  return { from: row.from_ts, to: row.to_ts };
+}
+
 export function getOldAveragePrice(marketHashName: string): number | null {
   const sqlite = getSqlite();
   const row = sqlite

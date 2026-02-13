@@ -8,7 +8,7 @@ interface DailyHistoryTableProps {
 }
 
 export function DailyHistoryTable({ data }: DailyHistoryTableProps) {
-  const { t } = useI18n();
+  const { t, priceProvider: pp } = useI18n();
 
   return (
     <Card className="glass-card mb-6 overflow-hidden">
@@ -32,10 +32,10 @@ export function DailyHistoryTable({ data }: DailyHistoryTableProps) {
                   <tr key={i} className="border-b border-white/5 last:border-0 hover:bg-white/5 transition-colors">
                     <td className="py-3 font-mono text-gray-300">{formatDate(day.date)}</td>
                     <td className="py-3 font-mono text-right font-bold text-gray-200">
-                      {formatEur(day.value)}
+                      {formatEur(day.value, pp)}
                     </td>
                     <td className={`py-3 font-mono text-right font-bold ${day.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                      {day.change >= 0 ? '+' : ''}{formatEur(day.change)}
+                      {day.change >= 0 ? '+' : ''}{formatEur(day.change, pp)}
                     </td>
                     <td className={`py-3 font-mono text-right font-bold ${day.changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {day.changePercent >= 0 ? '+' : ''}{day.changePercent.toFixed(2)}%

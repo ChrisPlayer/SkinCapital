@@ -42,6 +42,7 @@ export interface StorageUnit {
   casketId: string;
   name: string;
   shortId: string;
+  imageUrl: string | null;
   itemCount: number;
   uniqueItems: number;
   totalValue: number;

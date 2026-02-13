@@ -1,6 +1,10 @@
-export function formatEur(value: number | null | undefined): string {
+import { applyFees, type PriceProvider } from './i18n.tsx';
+
+export function formatEur(value: number | null | undefined, provider?: PriceProvider): string {
   if (value === null || value === undefined) return '\u2014';
-  return `\u20ac${value.toFixed(2)}`;
+  const adjusted = provider ? applyFees(value, provider) : value;
+  if (adjusted === null) return '\u2014';
+  return `\u20ac${adjusted.toFixed(2)}`;
 }
 
 export function formatPercent(value: number): string {

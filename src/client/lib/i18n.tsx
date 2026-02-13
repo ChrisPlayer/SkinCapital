@@ -1,6 +1,18 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 
 export type Locale = 'fr' | 'en';
+export type PriceProvider = 'steam' | 'steam_fees';
+
+// Steam marketplace fee: 10% Steam + 5% CS2 = ~13% buyer pays.
+// When selling, you receive ~87% of listed price.
+// We show the "after fees" value = price * 0.8695 (approximate seller receive).
+const STEAM_FEE_MULTIPLIER = 0.8695;
+
+export function applyFees(price: number | null, provider: PriceProvider): number | null {
+  if (price === null) return null;
+  if (provider === 'steam_fees') return price * STEAM_FEE_MULTIPLIER;
+  return price;
+}
 
 const translations = {
   // ── Auth ──
@@ -134,6 +146,10 @@ const translations = {
   'settings.french': { fr: 'Francais', en: 'French' },
   'settings.english': { fr: 'Anglais', en: 'English' },
   'settings.back': { fr: 'Retour', en: 'Back' },
+  'settings.priceProvider': { fr: 'Source des prix', en: 'Price source' },
+  'settings.steam': { fr: 'Steam Market', en: 'Steam Market' },
+  'settings.steamFees': { fr: 'Steam (- frais)', en: 'Steam (- fees)' },
+  'settings.steamFeesDesc': { fr: 'Prix apres deduction des frais Steam (10%) et CS2 (5%)', en: 'Price after Steam (10%) and CS2 (5%) fees deduction' },
 
   // ── View toggle ──
   'view.list': { fr: 'Liste', en: 'List' },
@@ -151,6 +167,8 @@ export type TranslationKey = keyof typeof translations;
 interface I18nContextType {
   locale: Locale;
   setLocale: (locale: Locale) => void;
+  priceProvider: PriceProvider;
+  setPriceProvider: (p: PriceProvider) => void;
   t: (key: TranslationKey) => string;
 }
 
@@ -162,12 +180,24 @@ function getInitialLocale(): Locale {
   return 'fr';
 }
 
+function getInitialPriceProvider(): PriceProvider {
+  const stored = localStorage.getItem('priceProvider');
+  if (stored === 'steam' || stored === 'steam_fees') return stored;
+  return 'steam';
+}
+
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
+  const [priceProvider, setPriceProviderState] = useState<PriceProvider>(getInitialPriceProvider);
 
   const setLocale = useCallback((l: Locale) => {
     setLocaleState(l);
     localStorage.setItem('locale', l);
+  }, []);
+
+  const setPriceProvider = useCallback((p: PriceProvider) => {
+    setPriceProviderState(p);
+    localStorage.setItem('priceProvider', p);
   }, []);
 
   const t = useCallback(
@@ -180,7 +210,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <I18nContext.Provider value={{ locale, setLocale, t }}>
+    <I18nContext.Provider value={{ locale, setLocale, priceProvider, setPriceProvider, t }}>
       {children}
     </I18nContext.Provider>
   );

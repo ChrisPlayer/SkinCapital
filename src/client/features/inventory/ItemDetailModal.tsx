@@ -14,7 +14,7 @@ interface ItemDetailModalProps {
 
 export function ItemDetailModal({ item, open, onOpenChange }: ItemDetailModalProps) {
   const { data: priceData, isLoading } = useItemPrice(item?.marketHashName ?? '');
-  const { t } = useI18n();
+  const { t, priceProvider } = useI18n();
 
   if (!item) return null;
 
@@ -75,7 +75,7 @@ export function ItemDetailModal({ item, open, onOpenChange }: ItemDetailModalPro
               {isLoading ? (
                 <Skeleton className="h-6 w-20 mx-auto" />
               ) : (
-                <p className="font-mono text-lg font-bold text-white">{formatEur(priceData?.price)}</p>
+                <p className="font-mono text-lg font-bold text-white">{formatEur(priceData?.price, priceProvider)}</p>
               )}
             </div>
             <div className="bg-sf-body p-3 rounded-xl border border-white/[0.06]">

@@ -1,6 +1,7 @@
 import { FloatBar } from './FloatBar.tsx';
 import { StickerRow } from './StickerRow.tsx';
 import { formatEur } from '../../lib/formatters.ts';
+import { useI18n } from '../../lib/i18n.tsx';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
 
 interface ItemCardProps {
@@ -10,6 +11,7 @@ interface ItemCardProps {
 }
 
 export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
+  const { priceProvider: pp } = useI18n();
   return (
     <div
       className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-200 hover:translate-y-[-2px] hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] group"
@@ -67,11 +69,11 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
             <div className="text-right flex-shrink-0 flex flex-col items-end gap-1">
               <div className="px-2 py-1 rounded-md bg-black/40 border border-white/5 group-hover:border-cs-orange/30 transition-colors">
                 <p className={`text-xs font-bold font-mono ${item.price ? 'text-cs-orange' : 'text-gray-600'}`}>
-                  {formatEur(item.price)}
+                  {formatEur(item.price, pp)}
                 </p>
               </div>
               {item.quantity > 1 && item.total > 0 && (
-                <p className="text-[10px] text-gray-500 font-mono">Tot: {formatEur(item.total)}</p>
+                <p className="text-[10px] text-gray-500 font-mono">Tot: {formatEur(item.total, pp)}</p>
               )}
             </div>
           </div>

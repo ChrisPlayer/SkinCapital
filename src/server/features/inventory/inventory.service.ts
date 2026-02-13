@@ -277,10 +277,15 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
     const casketGrouped = groupItems(casketItems, priceMap, previousPriceMap);
     const casketTotal = casketGrouped.reduce((sum, g) => sum + g.total, 0);
 
+    // Find the storage unit item itself to get its image
+    const casketItem = rawItems.find((i) => i.assetId === casketId);
+    const casketImageUrl = casketItem ? getBestImage(casketItem.marketHashName, casketItem) : null;
+
     storageUnits.push({
       casketId,
       name: casketItems[0]?.casketName || `Storage Unit #${storageUnits.length + 1}`,
       shortId: casketId.slice(-6),
+      imageUrl: casketImageUrl,
       itemCount: casketItems.length,
       uniqueItems: casketGrouped.length,
       totalValue: casketTotal,

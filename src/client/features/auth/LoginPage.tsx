@@ -1,9 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Card, CardContent } from '../../components/ui/card.tsx';
-import { Input } from '../../components/ui/input.tsx';
-import { Button } from '../../components/ui/button.tsx';
-import { Label } from '../../components/ui/label.tsx';
 import { SteamGuardForm } from './SteamGuardForm.tsx';
 import { useAuth } from './useAuth.ts';
 import { Lock, User, Shield, LogIn, ArrowLeft } from 'lucide-react';
@@ -18,14 +14,12 @@ export function LoginPage() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
     try {
       const result = await login.mutateAsync({
         username: form.username,
         password: form.password,
         sharedSecret: form.sharedSecret || undefined,
       });
-
       if (result.needsSteamGuard) {
         setNeedsSteamGuard(true);
         setError(result.error || '');
@@ -54,117 +48,108 @@ export function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4" style={{
-      background: 'linear-gradient(135deg, #0E1419 0%, #1B2838 50%, #0E1419 100%)',
-    }}>
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-cs-orange to-cs-purple rounded-2xl flex items-center justify-center shadow-2xl">
-            <Shield className="w-12 h-12 text-white" />
+    <div className="min-h-screen bg-sf-body flex items-center justify-center p-4 relative">
+      <div className="grid-overlay" />
+
+      <div className="w-full max-w-md relative z-10">
+        {/* Brand */}
+        <div className="text-center mb-10">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-sf-cyan/10 border border-sf-cyan/20 flex items-center justify-center shadow-[0_0_40px_rgba(0,204,255,0.15)]">
+            <Shield className="w-9 h-9 text-sf-cyan" />
           </div>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-cs-orange to-cs-purple bg-clip-text text-transparent mb-2">
-            CS2 Inventory Tracker
-          </h1>
-          <p className="text-gray-400">Connectez-vous avec votre compte Steam</p>
+          <h1 className="font-display text-3xl font-bold mb-2">SkinCapital</h1>
+          <span className="font-mono text-xs text-sf-dim">STEAM_AUTH // SECURE_LOGIN</span>
         </div>
 
         {needsSteamGuard ? (
-          <SteamGuardForm
-            onSubmit={handleSteamGuard}
-            isLoading={steamGuard.isPending}
-            error={error}
-          />
+          <SteamGuardForm onSubmit={handleSteamGuard} isLoading={steamGuard.isPending} error={error} />
         ) : (
-          <Card className="bg-cs-surface/80 backdrop-blur-xl border-white/10 mb-4">
-            <CardContent className="p-6">
-              {error && (
-                <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 text-sm">
-                  <strong>Erreur: </strong>{error}
-                </div>
-              )}
+          <div className="sf-card p-6 mb-4">
+            {error && (
+              <div className="mb-4 p-3 rounded-xl bg-sf-pink/10 border border-sf-pink/20 text-sf-pink text-sm font-mono">
+                <strong>ERR: </strong>{error}
+              </div>
+            )}
 
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div>
-                  <Label className="flex items-center gap-2 mb-2">
-                    <User className="w-4 h-4" /> Username Steam
-                  </Label>
-                  <Input
-                    value={form.username}
-                    onChange={(e) => setForm({ ...form, username: e.target.value })}
-                    required
-                    autoComplete="username"
-                    placeholder="Votre username Steam"
-                  />
-                </div>
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="flex items-center gap-2 mb-2 text-sm text-sf-secondary">
+                  <User className="w-4 h-4" /> Username Steam
+                </label>
+                <input
+                  value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })}
+                  required
+                  autoComplete="username"
+                  placeholder="Votre username Steam"
+                  className="w-full h-10 px-4 rounded-xl bg-sf-body border border-white/[0.08] text-sm text-white placeholder:text-sf-dim focus:outline-none focus:border-sf-cyan/40 transition-colors"
+                />
+              </div>
 
-                <div>
-                  <Label className="flex items-center gap-2 mb-2">
-                    <Lock className="w-4 h-4" /> Mot de passe
-                  </Label>
-                  <Input
-                    type="password"
-                    value={form.password}
-                    onChange={(e) => setForm({ ...form, password: e.target.value })}
-                    required
-                    autoComplete="current-password"
-                    placeholder="Votre mot de passe Steam"
-                  />
-                </div>
+              <div>
+                <label className="flex items-center gap-2 mb-2 text-sm text-sf-secondary">
+                  <Lock className="w-4 h-4" /> Mot de passe
+                </label>
+                <input
+                  type="password"
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  required
+                  autoComplete="current-password"
+                  placeholder="Votre mot de passe Steam"
+                  className="w-full h-10 px-4 rounded-xl bg-sf-body border border-white/[0.08] text-sm text-white placeholder:text-sf-dim focus:outline-none focus:border-sf-cyan/40 transition-colors"
+                />
+              </div>
 
-                <div>
-                  <Label className="flex items-center gap-2 mb-2">
-                    <Shield className="w-4 h-4" /> Shared Secret (2FA)
-                  </Label>
-                  <Input
-                    type="password"
-                    value={form.sharedSecret}
-                    onChange={(e) => setForm({ ...form, sharedSecret: e.target.value })}
-                    autoComplete="off"
-                    placeholder="Optionnel - pour auto 2FA"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Laissez vide si vous entrez le code manuellement
-                  </p>
-                </div>
+              <div>
+                <label className="flex items-center gap-2 mb-2 text-sm text-sf-secondary">
+                  <Shield className="w-4 h-4" /> Shared Secret (2FA)
+                </label>
+                <input
+                  type="password"
+                  value={form.sharedSecret}
+                  onChange={(e) => setForm({ ...form, sharedSecret: e.target.value })}
+                  autoComplete="off"
+                  placeholder="Optionnel - pour auto 2FA"
+                  className="w-full h-10 px-4 rounded-xl bg-sf-body border border-white/[0.08] text-sm text-white placeholder:text-sf-dim focus:outline-none focus:border-sf-cyan/40 transition-colors"
+                />
+                <p className="text-[11px] text-sf-dim mt-1.5 font-mono">Laissez vide pour entrer le code manuellement</p>
+              </div>
 
-                <Button
-                  type="submit"
-                  disabled={login.isPending}
-                  variant="gradient"
-                  className="w-full"
-                >
-                  <LogIn className="w-5 h-5 mr-2" />
-                  {login.isPending ? 'Connexion...' : 'Se connecter'}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+              <button
+                type="submit"
+                disabled={login.isPending}
+                className="w-full h-11 rounded-xl bg-sf-cyan text-black font-semibold text-sm hover:bg-sf-cyan/90 transition-colors shadow-[0_0_20px_rgba(0,204,255,0.3)] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+              >
+                <LogIn className="w-4 h-4" />
+                {login.isPending ? 'Connexion...' : 'Se connecter'}
+              </button>
+            </form>
+          </div>
         )}
 
-        <Card className="bg-cs-surface/80 backdrop-blur-xl border-white/10 mb-4">
-          <CardContent className="p-4">
-            <div className="flex items-start gap-3">
-              <Shield className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <p className="text-green-400 font-medium mb-1">Connexion securisee</p>
-                <ul className="text-gray-400 text-xs space-y-1">
-                  <li>Credentials chiffres AES-256-GCM en session</li>
-                  <li>Aucun mot de passe sauvegarde sur le disque</li>
-                  <li>Lecture seule de l'inventaire</li>
-                </ul>
-              </div>
+        {/* Security info */}
+        <div className="sf-card p-4 mb-4">
+          <div className="flex items-start gap-3">
+            <Shield className="w-5 h-5 text-sf-green flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sf-green font-semibold text-sm mb-1">Connexion securisee</p>
+              <ul className="text-sf-secondary text-xs space-y-0.5 font-mono">
+                <li>Credentials chiffres AES-256-GCM</li>
+                <li>Aucun mot de passe sauvegarde sur disque</li>
+                <li>Lecture seule de l'inventaire</li>
+              </ul>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
 
-        <Button
-          variant="ghost"
+        <button
           onClick={() => navigate('/')}
-          className="w-full text-gray-500 hover:text-white"
+          className="w-full py-2.5 rounded-xl text-sf-dim hover:text-white transition-colors text-sm flex items-center justify-center gap-2"
         >
-          <ArrowLeft className="w-4 h-4 mr-2" />
+          <ArrowLeft className="w-4 h-4" />
           Retour aux profils
-        </Button>
+        </button>
       </div>
     </div>
   );

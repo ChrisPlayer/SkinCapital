@@ -4,6 +4,7 @@ export interface ProfileRow {
   id: number;
   steam_id: string;
   username: string;
+  persona_name: string | null;
   avatar_url: string | null;
   item_count: number;
   total_value: number;
@@ -11,15 +12,23 @@ export interface ProfileRow {
   created_at: string;
 }
 
-export function upsertProfile(steamId: string, username: string): ProfileRow {
+export function upsertProfile(
+  steamId: string,
+  username: string,
+  personaName?: string,
+  avatarUrl?: string,
+): ProfileRow {
   const sqlite = getSqlite();
   sqlite
     .prepare(
-      `INSERT INTO profiles (steam_id, username)
-       VALUES (?, ?)
-       ON CONFLICT(steam_id) DO UPDATE SET username = excluded.username`,
+      `INSERT INTO profiles (steam_id, username, persona_name, avatar_url)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(steam_id) DO UPDATE SET
+         username = excluded.username,
+         persona_name = COALESCE(excluded.persona_name, profiles.persona_name),
+         avatar_url = COALESCE(excluded.avatar_url, profiles.avatar_url)`,
     )
-    .run(steamId, username);
+    .run(steamId, username, personaName || null, avatarUrl || null);
 
   return sqlite.prepare('SELECT * FROM profiles WHERE steam_id = ?').get(steamId) as ProfileRow;
 }

@@ -161,6 +161,37 @@ function submitSteamGuardCode(code: string): Promise<void> {
   });
 }
 
+function getPersonaInfo(steamId64: string): Promise<{ personaName: string; avatarUrl: string } | null> {
+  return new Promise((resolve) => {
+    if (!steamUser) return resolve(null);
+
+    steamUser.getPersonas([steamId64], (err: Error | null, personas: Record<string, { player_name?: string; avatar_url_full?: string; avatar_url_medium?: string; avatar_hash?: Buffer }>) => {
+      if (err || !personas || !personas[steamId64]) {
+        logger.warn('[Steam] Could not fetch persona info:', err?.message || 'no data');
+        return resolve(null);
+      }
+
+      const p = personas[steamId64];
+      const personaName = p.player_name || '';
+
+      let avatarUrl = '';
+      if (p.avatar_url_full) {
+        avatarUrl = p.avatar_url_full;
+      } else if (p.avatar_url_medium) {
+        avatarUrl = p.avatar_url_medium;
+      } else if (p.avatar_hash) {
+        const hash = Buffer.isBuffer(p.avatar_hash) ? p.avatar_hash.toString('hex') : String(p.avatar_hash);
+        if (hash && !hash.match(/^0+$/)) {
+          avatarUrl = `https://avatars.cloudflare.steamstatic.com/${hash}_full.jpg`;
+        }
+      }
+
+      logger.info(`[Steam] Persona: ${personaName}, Avatar: ${avatarUrl ? 'yes' : 'none'}`);
+      resolve({ personaName, avatarUrl });
+    });
+  });
+}
+
 function logout() {
   if (steamUser) {
     steamUser.logOff();
@@ -198,6 +229,7 @@ export const steamClient = {
   init,
   login,
   submitSteamGuardCode,
+  getPersonaInfo,
   logout,
   getStatus,
   waitForGC,

@@ -1,57 +1,44 @@
 import { useNavigate } from 'react-router-dom';
-import { Button } from '../../components/ui/button.tsx';
-import { Skeleton } from '../../components/ui/skeleton.tsx';
 import { useProfiles } from '../../hooks/useApi.ts';
 import { formatEur, formatDate } from '../../lib/formatters.ts';
-import { Plus, LogIn, Shield, Package } from 'lucide-react';
+import { Plus, LogIn, Package, Loader2 } from 'lucide-react';
 
 export function ProfilesPage() {
   const navigate = useNavigate();
   const { data: profiles, isLoading } = useProfiles();
 
   return (
-    <div className="min-h-screen text-gray-100" style={{
-      background: '#0f1218',
-      backgroundImage: 'radial-gradient(at 0% 0%, rgba(136, 71, 255, 0.15) 0px, transparent 50%), radial-gradient(at 100% 0%, rgba(222, 155, 53, 0.1) 0px, transparent 50%), radial-gradient(at 100% 100%, rgba(211, 44, 230, 0.1) 0px, transparent 50%)',
-      backgroundAttachment: 'fixed',
-    }}>
+    <div className="min-h-screen bg-sf-body relative">
+      {/* Grid overlay */}
+      <div className="grid-overlay" />
+
       {/* Header */}
-      <header className="glass-card border-b border-white/5 shadow-2xl">
-        <div className="max-w-[1200px] mx-auto px-6 py-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-cs-orange to-cs-purple rounded-xl flex items-center justify-center shadow-lg">
-              <Shield className="w-7 h-7 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold bg-gradient-to-r from-cs-orange to-cs-pink bg-clip-text text-transparent tracking-tight">
-                CS2 Inventory Tracker
-              </h1>
-              <p className="text-xs text-gray-500">Suivi d'inventaire multi-comptes</p>
-            </div>
+      <header className="relative z-10 border-b border-white/[0.06]">
+        <div className="max-w-5xl mx-auto px-6 py-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-1 h-6 rounded-full bg-sf-cyan shadow-[0_0_10px_#00ccff]" />
+            <span className="font-display text-2xl font-bold">SkinCapital</span>
           </div>
+          <button
+            onClick={() => navigate('/login')}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sf-cyan text-black font-semibold text-sm hover:bg-sf-cyan/90 transition-colors shadow-[0_0_20px_rgba(0,204,255,0.3)]"
+          >
+            <Plus className="w-4 h-4" />
+            Ajouter un compte
+          </button>
         </div>
       </header>
 
       {/* Content */}
-      <main className="max-w-[1200px] mx-auto px-6 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-2xl font-bold text-white">Vos profils</h2>
-            <p className="text-sm text-gray-500 mt-1">
-              Selectionnez un profil ou ajoutez un nouveau compte Steam
-            </p>
-          </div>
-          <Button variant="gradient" onClick={() => navigate('/login')}>
-            <Plus className="w-4 h-4 mr-2" />
-            Ajouter un compte
-          </Button>
+      <main className="relative z-10 max-w-5xl mx-auto px-6 py-10">
+        <div className="mb-8">
+          <h2 className="font-display text-2xl font-bold mb-1">Vos profils</h2>
+          <span className="font-mono text-xs text-sf-dim">SELECT_PROFILE // MULTI_ACCOUNT_SYSTEM</span>
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-44 rounded-2xl" />
-            ))}
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="w-6 h-6 animate-spin text-sf-cyan" />
           </div>
         ) : profiles && profiles.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -59,50 +46,61 @@ export function ProfilesPage() {
               <div
                 key={profile.steamId}
                 onClick={() => navigate(`/profile/${profile.steamId}`)}
-                className="glass-card rounded-2xl p-5 cursor-pointer transition-all duration-200 hover:translate-y-[-2px] hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] hover:border-cs-orange/30 group"
+                className="sf-card sf-card-hover p-6 cursor-pointer group"
               >
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-cs-orange to-cs-purple flex items-center justify-center text-white font-bold text-lg shadow-lg">
-                    {profile.username.charAt(0).toUpperCase()}
-                  </div>
+                <div className="flex items-center gap-3 mb-5">
+                  {profile.avatarUrl ? (
+                    <img
+                      src={profile.avatarUrl}
+                      alt={profile.personaName || profile.username}
+                      className="w-11 h-11 rounded-xl border border-sf-cyan/20 object-cover"
+                    />
+                  ) : (
+                    <div className="w-11 h-11 rounded-xl bg-sf-cyan/10 border border-sf-cyan/20 flex items-center justify-center font-display text-lg font-bold text-sf-cyan">
+                      {(profile.personaName || profile.username).charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div className="min-w-0">
-                    <p className="font-bold text-white truncate group-hover:text-cs-orange transition-colors">
-                      {profile.username}
+                    <p className="font-semibold text-white truncate group-hover:text-sf-cyan transition-colors">
+                      {profile.personaName || profile.username}
                     </p>
-                    <p className="text-[10px] text-gray-600 font-mono">{profile.steamId}</p>
+                    <p className="text-[10px] text-sf-dim font-mono">{profile.username}</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 mb-3">
+                <div className="grid grid-cols-2 gap-4 mb-4">
                   <div>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Items</p>
-                    <p className="text-lg font-bold text-white">{profile.itemCount}</p>
+                    <div className="nav-label mb-1">Items</div>
+                    <p className="font-mono text-base font-bold">{profile.itemCount}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Valeur</p>
-                    <p className="text-lg font-bold text-cs-orange">{formatEur(profile.totalValue)}</p>
+                    <div className="nav-label mb-1">Valeur</div>
+                    <p className="font-mono text-base font-bold text-sf-cyan">{formatEur(profile.totalValue)}</p>
                   </div>
                 </div>
 
-                <p className="text-[10px] text-gray-600">
+                <div className="font-mono text-[10px] text-sf-dim">
                   {profile.lastRefresh
-                    ? `Mis a jour le ${formatDate(profile.lastRefresh)}`
-                    : 'Jamais synchronise'}
-                </p>
+                    ? `LAST_SYNC // ${formatDate(profile.lastRefresh)}`
+                    : 'NEVER_SYNCED'}
+                </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="glass-card rounded-2xl p-12 text-center">
-            <Package className="w-16 h-16 mx-auto text-gray-600 mb-4" />
-            <h3 className="text-lg font-semibold text-white mb-2">Aucun profil</h3>
-            <p className="text-gray-500 mb-6 max-w-sm mx-auto">
-              Connectez-vous avec votre compte Steam pour commencer a suivre votre inventaire CS2
+          <div className="sf-card p-16 text-center max-w-md mx-auto">
+            <Package className="w-14 h-14 mx-auto text-sf-dim mb-5" />
+            <h3 className="font-display text-xl font-bold mb-2">Aucun profil</h3>
+            <p className="text-sm text-sf-secondary mb-6">
+              Connectez-vous avec votre compte Steam pour commencer le suivi de votre inventaire CS2.
             </p>
-            <Button variant="gradient" onClick={() => navigate('/login')}>
-              <LogIn className="w-4 h-4 mr-2" />
+            <button
+              onClick={() => navigate('/login')}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-sf-cyan text-black font-semibold text-sm hover:bg-sf-cyan/90 transition-colors shadow-[0_0_20px_rgba(0,204,255,0.3)]"
+            >
+              <LogIn className="w-4 h-4" />
               Se connecter
-            </Button>
+            </button>
           </div>
         )}
       </main>

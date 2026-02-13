@@ -174,6 +174,47 @@ function getBestImage(
   return null;
 }
 
+export async function fetchMissingPrices(steamId: string) {
+  const rawItems = getItemsByProfile(steamId);
+  if (rawItems.length === 0) {
+    logger.info('[Inventory] No items in DB for this profile, skipping missing price check');
+    return;
+  }
+
+  const uniqueNames = [...new Set(rawItems.map((i) => i.marketHashName))];
+  const latestPrices = getAllLatestPrices();
+  const priceMap = new Map(latestPrices.map((p) => [p.market_hash_name, p.price_eur]));
+
+  const missingNames = uniqueNames.filter((name) => !priceMap.has(name) || priceMap.get(name) === null);
+
+  if (missingNames.length === 0) {
+    logger.info('[Inventory] All items have prices, nothing to fetch');
+    return;
+  }
+
+  logger.info(`[Inventory] Found ${missingNames.length} items without prices, fetching...`);
+
+  let totalValue = 0;
+  for (const name of missingNames) {
+    try {
+      await getPrices(name);
+    } catch (err) {
+      logger.error(`[Inventory] Missing price fetch error for ${name}:`, (err as Error).message);
+    }
+  }
+
+  // Recalculate total value with all prices
+  const updatedPrices = getAllLatestPrices();
+  const updatedPriceMap = new Map(updatedPrices.map((p) => [p.market_hash_name, p.price_eur]));
+  for (const item of rawItems) {
+    const price = updatedPriceMap.get(item.marketHashName);
+    if (price) totalValue += price;
+  }
+
+  updateProfileSummary(steamId, rawItems.length, totalValue);
+  logger.info(`[Inventory] Missing prices fetched. Updated total: €${totalValue.toFixed(2)}`);
+}
+
 export function getDashboardData(steamId: string, days: number = 30): DashboardData {
   const rawItems = getItemsByProfile(steamId);
 

@@ -14,6 +14,7 @@ export function useProfiles() {
   return useQuery({
     queryKey: ['profiles'],
     queryFn: () => api.profiles.list(),
+    refetchInterval: 10000,
   });
 }
 

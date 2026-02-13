@@ -88,6 +88,12 @@ export function initDb() {
     )
   `);
 
+  // Migration: add persona_name to profiles if missing
+  const profileCols = sqlite.pragma('table_info(profiles)') as Array<{ name: string }>;
+  if (!profileCols.some((c) => c.name === 'persona_name')) {
+    sqlite.exec('ALTER TABLE profiles ADD COLUMN persona_name TEXT');
+  }
+
   // Migration: add steam_id to items if missing
   const itemCols = sqlite.pragma('table_info(items)') as Array<{ name: string }>;
   if (!itemCols.some((c) => c.name === 'steam_id')) {

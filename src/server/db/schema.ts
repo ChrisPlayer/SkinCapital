@@ -7,6 +7,7 @@ export const profiles = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     steamId: text('steam_id').unique().notNull(),
     username: text('username').notNull(),
+    personaName: text('persona_name'),
     avatarUrl: text('avatar_url'),
     itemCount: integer('item_count').default(0),
     totalValue: real('total_value').default(0),

@@ -14,6 +14,15 @@ declare module 'steam-user' {
     twoFactorCode?: string;
   }
 
+  interface PersonaData {
+    player_name?: string;
+    avatar_url_icon?: string;
+    avatar_url_medium?: string;
+    avatar_url_full?: string;
+    avatar_hash?: Buffer;
+    [key: string]: unknown;
+  }
+
   class SteamUser extends EventEmitter {
     steamID: { getSteamID64(): string } | null;
     constructor(options?: SteamUserOptions);
@@ -21,6 +30,10 @@ declare module 'steam-user' {
     logOff(): void;
     gamesPlayed(apps: number[]): void;
     setPersona(state: number): void;
+    getPersonas(
+      steamIds: string[],
+      callback: (err: Error | null, personas: Record<string, PersonaData>) => void,
+    ): void;
   }
 
   export = SteamUser;

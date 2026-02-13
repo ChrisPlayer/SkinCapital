@@ -8,6 +8,7 @@ function toProfile(row: {
   id: number;
   steam_id: string;
   username: string;
+  persona_name: string | null;
   avatar_url: string | null;
   item_count: number;
   total_value: number;
@@ -17,6 +18,7 @@ function toProfile(row: {
     id: row.id,
     steamId: row.steam_id,
     username: row.username,
+    personaName: row.persona_name,
     avatarUrl: row.avatar_url,
     itemCount: row.item_count,
     totalValue: row.total_value,

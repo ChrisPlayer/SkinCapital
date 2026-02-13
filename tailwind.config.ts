@@ -7,15 +7,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        cs: {
-          orange: '#DE9B35',
-          purple: '#8847FF',
-          pink: '#D32CE6',
-          red: '#EB4B4B',
-          blue: '#5E98D9',
-          gray: '#1B2838',
-          dark: '#0E1419',
-          surface: '#16202D',
+        sf: {
+          body: '#050506',
+          sidebar: '#0a0a0c',
+          card: '#111216',
+          'card-hover': '#16171d',
+          cyan: '#00ccff',
+          green: '#4ADE80',
+          pink: '#ff3366',
+          purple: '#a020f0',
+          dim: '#444c56',
+          secondary: '#8b949e',
         },
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
@@ -57,6 +59,8 @@ const config: Config = {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
+        mono: ['"JetBrains Mono"', 'monospace'],
+        display: ['"Space Grotesk"', 'sans-serif'],
         sans: ['Inter', 'sans-serif'],
       },
     },

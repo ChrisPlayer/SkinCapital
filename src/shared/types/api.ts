@@ -8,6 +8,7 @@ export interface Profile {
   id: number;
   steamId: string;
   username: string;
+  personaName: string | null;
   avatarUrl: string | null;
   itemCount: number;
   totalValue: number;

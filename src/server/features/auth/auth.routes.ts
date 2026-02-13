@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { steamClient } from '../steam/steam.client.ts';
-import { refresh } from '../inventory/inventory.service.ts';
+import { refresh, fetchMissingPrices } from '../inventory/inventory.service.ts';
 import { encryptCredential } from './auth.service.ts';
 import { authLimiter } from '../../middleware/security.ts';
 import { upsertProfile } from '../../db/queries/profiles.ts';
@@ -20,11 +20,12 @@ const steamGuardSchema = z.object({
   code: z.string().min(1).max(10),
 });
 
-function rowToProfile(row: { id: number; steam_id: string; username: string; avatar_url: string | null; item_count: number; total_value: number; last_refresh: string | null }): Profile {
+function rowToProfile(row: { id: number; steam_id: string; username: string; persona_name: string | null; avatar_url: string | null; item_count: number; total_value: number; last_refresh: string | null }): Profile {
   return {
     id: row.id,
     steamId: row.steam_id,
     username: row.username,
+    personaName: row.persona_name,
     avatarUrl: row.avatar_url,
     itemCount: row.item_count,
     totalValue: row.total_value,
@@ -55,9 +56,22 @@ router.post('/login', authLimiter, async (req, res) => {
     logger.info('[Auth] Login successful');
 
     const steamId = steamClient.steamUser!.steamID!.getSteamID64();
-    const profileRow = upsertProfile(steamId, username);
+
+    // Fetch persona name and avatar from Steam
+    const personaInfo = await steamClient.getPersonaInfo(steamId);
+    const profileRow = upsertProfile(
+      steamId,
+      username,
+      personaInfo?.personaName,
+      personaInfo?.avatarUrl,
+    );
 
     delete req.session.credentials;
+
+    // Check for items without prices first, then do full refresh
+    fetchMissingPrices(steamId).catch((err) => {
+      logger.error('[Auth] Missing prices check error:', (err as Error).message);
+    });
 
     refresh(steamId).catch((err) => {
       logger.error('[Auth] Initial refresh error:', (err as Error).message);
@@ -95,10 +109,23 @@ router.post('/steamguard', authLimiter, async (req, res) => {
 
     const steamId = steamClient.steamUser!.steamID!.getSteamID64();
     const username = req.session.credentials?.username || 'Unknown';
-    const profileRow = upsertProfile(steamId, username);
+
+    // Fetch persona name and avatar from Steam
+    const personaInfo = await steamClient.getPersonaInfo(steamId);
+    const profileRow = upsertProfile(
+      steamId,
+      username,
+      personaInfo?.personaName,
+      personaInfo?.avatarUrl,
+    );
 
     delete req.session.credentials;
     delete req.session.needsSteamGuard;
+
+    // Check for items without prices first, then do full refresh
+    fetchMissingPrices(steamId).catch((err) => {
+      logger.error('[Auth] Missing prices check error:', (err as Error).message);
+    });
 
     refresh(steamId).catch((err) => {
       logger.error('[Auth] Initial refresh error:', (err as Error).message);

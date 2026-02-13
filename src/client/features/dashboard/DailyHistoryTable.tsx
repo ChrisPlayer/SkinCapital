@@ -1,4 +1,5 @@
 import { Card, CardContent } from '../../components/ui/card.tsx';
+import { useI18n } from '../../lib/i18n.tsx';
 import { formatEur, formatDate } from '../../lib/formatters.ts';
 import type { DailyHistoryEntry } from '../../../shared/types/api.ts';
 
@@ -7,19 +8,21 @@ interface DailyHistoryTableProps {
 }
 
 export function DailyHistoryTable({ data }: DailyHistoryTableProps) {
+  const { t } = useI18n();
+
   return (
     <Card className="glass-card mb-6 overflow-hidden">
       <CardContent className="p-6">
         <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider mb-4">
-          Historique Journalier
+          {t('history.title')}
         </h2>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="text-xs text-gray-500 border-b border-white/5">
-                <th className="py-3 font-medium uppercase tracking-wider">Date</th>
-                <th className="py-3 font-medium uppercase tracking-wider text-right">Valeur Totale</th>
-                <th className="py-3 font-medium uppercase tracking-wider text-right">Variation</th>
+                <th className="py-3 font-medium uppercase tracking-wider">{t('table.date')}</th>
+                <th className="py-3 font-medium uppercase tracking-wider text-right">{t('table.totalValue')}</th>
+                <th className="py-3 font-medium uppercase tracking-wider text-right">{t('table.variation')}</th>
                 <th className="py-3 font-medium uppercase tracking-wider text-right">%</th>
               </tr>
             </thead>
@@ -42,7 +45,7 @@ export function DailyHistoryTable({ data }: DailyHistoryTableProps) {
               ) : (
                 <tr>
                   <td colSpan={4} className="py-4 text-center text-gray-500 text-xs">
-                    Aucune donnee historique disponible
+                    {t('table.noHistoryData')}
                   </td>
                 </tr>
               )}

@@ -1,7 +1,6 @@
 import SteamUser from 'steam-user';
 import SteamCommunity from 'steamcommunity';
 import GlobalOffensive from 'globaloffensive';
-import SteamTotp from 'steam-totp';
 import { logger } from '../../lib/logger.ts';
 
 let steamUser: SteamUser | null = null;
@@ -10,6 +9,7 @@ let csgoClient: GlobalOffensive | null = null;
 let _isLoggedIn = false;
 let _isConnectedToGC = false;
 let _steamGuardCallback: ((code: string) => void) | null = null;
+let _pendingGCResolve: (() => void) | null = null;
 
 function init() {
   steamUser = new SteamUser({
@@ -67,17 +67,15 @@ function setupEventHandlers() {
 function login(
   username: string,
   password: string,
-  sharedSecret: string | null,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     if (!steamUser) {
       init();
     }
 
-    const loginOptions: { accountName: string; password: string; twoFactorCode?: string } = {
+    const loginOptions: { accountName: string; password: string } = {
       accountName: username,
       password: password,
-      twoFactorCode: sharedSecret ? SteamTotp.generateAuthCode(sharedSecret) : undefined,
     };
 
     logger.info('[Steam] Attempting login...');
@@ -111,11 +109,20 @@ function login(
       reject(err);
     });
 
-    csgoClient!.once('connectedToGC', () => {
+    // Clean up any stale GC listener from a previous login attempt
+    if (_pendingGCResolve) {
+      csgoClient!.removeListener('connectedToGC', _pendingGCResolve);
+      _pendingGCResolve = null;
+    }
+
+    const onGC = () => {
       clearTimeout(gcTimeout);
+      _pendingGCResolve = null;
       logger.info('[CS2] Ready to fetch inventory');
       resolve();
-    });
+    };
+    _pendingGCResolve = onGC;
+    csgoClient!.once('connectedToGC', onGC);
 
     steamUser!.logOn(loginOptions);
   });
@@ -149,11 +156,20 @@ function submitSteamGuardCode(code: string): Promise<void> {
       reject(err);
     });
 
-    csgoClient!.once('connectedToGC', () => {
+    // Clean up any stale GC listener from login attempts
+    if (_pendingGCResolve) {
+      csgoClient!.removeListener('connectedToGC', _pendingGCResolve);
+      _pendingGCResolve = null;
+    }
+
+    const onGC = () => {
       clearTimeout(gcTimeout);
+      _pendingGCResolve = null;
       logger.info('[CS2] Ready to fetch inventory');
       resolve();
-    });
+    };
+    _pendingGCResolve = onGC;
+    csgoClient!.once('connectedToGC', onGC);
 
     logger.info('[Steam] Submitting Steam Guard code...');
     _steamGuardCallback(code);

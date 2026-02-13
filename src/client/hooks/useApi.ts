@@ -49,10 +49,20 @@ export function useRefreshInventory() {
   });
 }
 
+export function useRefreshPrices() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (steamId: string) => api.prices.refresh(steamId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory-status'] });
+    },
+  });
+}
+
 export function useItemPrice(marketHashName: string) {
   return useQuery({
     queryKey: ['price', marketHashName],
-    queryFn: () => api.prices(marketHashName),
+    queryFn: () => api.prices.get(marketHashName),
     enabled: !!marketHashName,
   });
 }

@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SteamGuardForm } from './SteamGuardForm.tsx';
 import { useAuth } from './useAuth.ts';
+import { useI18n } from '../../lib/i18n.tsx';
 import { Lock, User, Shield, LogIn, ArrowLeft } from 'lucide-react';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const { login, steamGuard } = useAuth();
-  const [form, setForm] = useState({ username: '', password: '', sharedSecret: '' });
+  const { t } = useI18n();
+  const [form, setForm] = useState({ username: '', password: '' });
   const [needsSteamGuard, setNeedsSteamGuard] = useState(false);
   const [error, setError] = useState('');
 
@@ -18,7 +20,6 @@ export function LoginPage() {
       const result = await login.mutateAsync({
         username: form.username,
         password: form.password,
-        sharedSecret: form.sharedSecret || undefined,
       });
       if (result.needsSteamGuard) {
         setNeedsSteamGuard(true);
@@ -58,7 +59,7 @@ export function LoginPage() {
             <Shield className="w-9 h-9 text-sf-cyan" />
           </div>
           <h1 className="font-display text-3xl font-bold mb-2">SkinCapital</h1>
-          <span className="font-mono text-xs text-sf-dim">STEAM_AUTH // SECURE_LOGIN</span>
+          <span className="font-mono text-xs text-sf-dim">{t('auth.steamAuth')}</span>
         </div>
 
         {needsSteamGuard ? (
@@ -74,21 +75,21 @@ export function LoginPage() {
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="flex items-center gap-2 mb-2 text-sm text-sf-secondary">
-                  <User className="w-4 h-4" /> Username Steam
+                  <User className="w-4 h-4" /> {t('auth.username')}
                 </label>
                 <input
                   value={form.username}
                   onChange={(e) => setForm({ ...form, username: e.target.value })}
                   required
                   autoComplete="username"
-                  placeholder="Votre username Steam"
+                  placeholder={t('auth.usernamePlaceholder')}
                   className="w-full h-10 px-4 rounded-xl bg-sf-body border border-white/[0.08] text-sm text-white placeholder:text-sf-dim focus:outline-none focus:border-sf-cyan/40 transition-colors"
                 />
               </div>
 
               <div>
                 <label className="flex items-center gap-2 mb-2 text-sm text-sf-secondary">
-                  <Lock className="w-4 h-4" /> Mot de passe
+                  <Lock className="w-4 h-4" /> {t('auth.password')}
                 </label>
                 <input
                   type="password"
@@ -96,24 +97,9 @@ export function LoginPage() {
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   required
                   autoComplete="current-password"
-                  placeholder="Votre mot de passe Steam"
+                  placeholder={t('auth.passwordPlaceholder')}
                   className="w-full h-10 px-4 rounded-xl bg-sf-body border border-white/[0.08] text-sm text-white placeholder:text-sf-dim focus:outline-none focus:border-sf-cyan/40 transition-colors"
                 />
-              </div>
-
-              <div>
-                <label className="flex items-center gap-2 mb-2 text-sm text-sf-secondary">
-                  <Shield className="w-4 h-4" /> Shared Secret (2FA)
-                </label>
-                <input
-                  type="password"
-                  value={form.sharedSecret}
-                  onChange={(e) => setForm({ ...form, sharedSecret: e.target.value })}
-                  autoComplete="off"
-                  placeholder="Optionnel - pour auto 2FA"
-                  className="w-full h-10 px-4 rounded-xl bg-sf-body border border-white/[0.08] text-sm text-white placeholder:text-sf-dim focus:outline-none focus:border-sf-cyan/40 transition-colors"
-                />
-                <p className="text-[11px] text-sf-dim mt-1.5 font-mono">Laissez vide pour entrer le code manuellement</p>
               </div>
 
               <button
@@ -122,33 +108,18 @@ export function LoginPage() {
                 className="w-full h-11 rounded-xl bg-sf-cyan text-black font-semibold text-sm hover:bg-sf-cyan/90 transition-colors shadow-[0_0_20px_rgba(0,204,255,0.3)] disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
               >
                 <LogIn className="w-4 h-4" />
-                {login.isPending ? 'Connexion...' : 'Se connecter'}
+                {login.isPending ? t('auth.connecting') : t('auth.login')}
               </button>
             </form>
           </div>
         )}
-
-        {/* Security info */}
-        <div className="sf-card p-4 mb-4">
-          <div className="flex items-start gap-3">
-            <Shield className="w-5 h-5 text-sf-green flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sf-green font-semibold text-sm mb-1">Connexion securisee</p>
-              <ul className="text-sf-secondary text-xs space-y-0.5 font-mono">
-                <li>Credentials chiffres AES-256-GCM</li>
-                <li>Aucun mot de passe sauvegarde sur disque</li>
-                <li>Lecture seule de l'inventaire</li>
-              </ul>
-            </div>
-          </div>
-        </div>
 
         <button
           onClick={() => navigate('/')}
           className="w-full py-2.5 rounded-xl text-sf-dim hover:text-white transition-colors text-sm flex items-center justify-center gap-2"
         >
           <ArrowLeft className="w-4 h-4" />
-          Retour aux profils
+          {t('auth.backToProfiles')}
         </button>
       </div>
     </div>

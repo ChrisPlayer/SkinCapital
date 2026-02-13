@@ -7,7 +7,7 @@ export function useAuth() {
   const { data: status, isLoading } = useAuthStatus();
 
   const loginMutation = useMutation({
-    mutationFn: (data: { username: string; password: string; sharedSecret?: string }) =>
+    mutationFn: (data: { username: string; password: string }) =>
       api.auth.login(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auth-status'] });

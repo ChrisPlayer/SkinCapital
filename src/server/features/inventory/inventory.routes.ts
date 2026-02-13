@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getDashboardData, refresh, isRefreshInProgress, getLastRefresh } from './inventory.service.ts';
+import { getDashboardData, refresh, refreshPrices, isRefreshInProgress, getLastRefresh } from './inventory.service.ts';
 import { requireAuth } from '../auth/auth.middleware.ts';
 import { steamClient } from '../steam/steam.client.ts';
 import { logger } from '../../lib/logger.ts';
@@ -29,6 +29,19 @@ router.post('/inventory/refresh', requireAuth, (_req, res) => {
     }
     refresh(steamId).catch((err) => logger.error('[Dashboard] Refresh error:', err));
     res.status(202).json({ message: 'Refresh started', steamId });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/prices/refresh', (req, res) => {
+  try {
+    const steamId = req.query.steamId as string;
+    if (!steamId) {
+      return res.status(400).json({ error: 'steamId query parameter required' });
+    }
+    refreshPrices(steamId).catch((err) => logger.error('[Prices] Refresh error:', err));
+    res.status(202).json({ message: 'Price refresh started', steamId });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

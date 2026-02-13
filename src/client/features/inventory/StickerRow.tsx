@@ -1,4 +1,5 @@
 import type { Sticker } from '../../../shared/types/inventory.ts';
+import { useI18n } from '../../lib/i18n.tsx';
 import { formatEur } from '../../lib/formatters.ts';
 
 interface StickerRowProps {
@@ -7,12 +8,14 @@ interface StickerRowProps {
 }
 
 export function StickerRow({ stickers, stickerValue }: StickerRowProps) {
+  const { t } = useI18n();
+
   if (!stickers || stickers.length === 0) return null;
 
   return (
     <div className="mt-2 pt-2 border-t border-white/5">
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[9px] text-gray-500 uppercase tracking-wider">Stickers</span>
+        <span className="text-[9px] text-gray-500 uppercase tracking-wider">{t('item.stickers')}</span>
         {stickerValue && stickerValue > 0 && (
           <span className="text-[9px] text-cs-orange font-mono">+{formatEur(stickerValue)}</span>
         )}

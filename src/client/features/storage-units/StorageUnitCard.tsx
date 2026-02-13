@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Card } from '../../components/ui/card.tsx';
 import { ItemCard } from '../inventory/ItemCard.tsx';
 import { ItemDetailModal } from '../inventory/ItemDetailModal.tsx';
+import { useI18n } from '../../lib/i18n.tsx';
 import { formatEur } from '../../lib/formatters.ts';
 import { ChevronDown, FolderOpen } from 'lucide-react';
 import type { StorageUnit, ItemGroup } from '../../../shared/types/inventory.ts';
@@ -14,6 +15,7 @@ interface StorageUnitCardProps {
 export function StorageUnitCard({ unit, defaultOpen = false }: StorageUnitCardProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const [selectedItem, setSelectedItem] = useState<ItemGroup | null>(null);
+  const { t } = useI18n();
 
   return (
     <Card className={`glass-card transition-all duration-300 overflow-hidden ${isOpen ? 'border-cs-purple/50' : 'hover:border-cs-purple/30'}`}>
@@ -32,7 +34,7 @@ export function StorageUnitCard({ unit, defaultOpen = false }: StorageUnitCardPr
               <span className="mx-2 text-gray-700">&bull;</span>
               <span>{unit.itemCount} items</span>
               <span className="mx-2 text-gray-700">&bull;</span>
-              <span>{unit.uniqueItems} uniques</span>
+              <span>{unit.uniqueItems} {t('kpi.uniques')}</span>
             </p>
           </div>
         </div>
@@ -46,7 +48,7 @@ export function StorageUnitCard({ unit, defaultOpen = false }: StorageUnitCardPr
         <div className="border-t border-white/5 px-5 pb-5">
           {unit.items.length === 0 ? (
             <div className="text-center p-4 text-gray-500 bg-white/5 rounded-xl mt-4">
-              Aucun item trouve
+              {t('empty.noItems')}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2 pt-4">

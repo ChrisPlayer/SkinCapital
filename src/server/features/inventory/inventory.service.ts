@@ -1,10 +1,11 @@
 import { getAllInventory } from '../steam/steam.inventory.ts';
+import { steamClient } from '../steam/steam.client.ts';
 import { initialize as initSchema } from '../steam/steam.schema.ts';
 import { getCachedPrices, getPrices } from '../pricing/pricing.service.ts';
 import * as historyService from '../history/history.service.ts';
 import { insertItemsBatch, clearItemsByProfile, getItemsByProfile } from '../../db/queries/items.ts';
 import { updateProfileSummary } from '../../db/queries/profiles.ts';
-import { getAllLatestPrices } from '../../db/queries/prices.ts';
+import { getAllLatestPrices, getAllPreviousPrices } from '../../db/queries/prices.ts';
 import { getItemRarity } from '../../../shared/constants/rarity.ts';
 import { getWearLevel } from '../../../shared/constants/wear.ts';
 import { logger } from '../../lib/logger.ts';
@@ -68,6 +69,10 @@ export async function refresh(steamId: string) {
 
     updateProfileSummary(steamId, items.length, totalValue);
 
+    // Auto-disconnect Steam after inventory refresh
+    steamClient.logout();
+    logger.info('[Inventory] Steam session disconnected after refresh');
+
     lastRefresh = new Date();
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     logger.info(`[Inventory] Refresh complete in ${duration}s. Total value: \u20ac${totalValue.toFixed(2)}`);
@@ -94,6 +99,7 @@ function groupItems(
     schemaImage: string | null;
   }>,
   priceMap: Map<string, number | null>,
+  previousPriceMap?: Map<string, number | null>,
 ): ItemGroup[] {
   const groups: Record<string, {
     quantity: number;
@@ -136,6 +142,16 @@ function groupItems(
     const imageUrl = getBestImage(name, firstItem);
     const stickers = parseStickers(firstItem?.stickers) || [];
 
+    let priceChange: number | null = null;
+    let priceChangePercent: number | null = null;
+    if (previousPriceMap && unitPrice !== null) {
+      const prevPrice = previousPriceMap.get(name) ?? null;
+      if (prevPrice !== null && prevPrice > 0) {
+        priceChange = unitPrice - prevPrice;
+        priceChangePercent = (priceChange / prevPrice) * 100;
+      }
+    }
+
     result.push({
       marketHashName: name,
       quantity: data.quantity,
@@ -149,6 +165,8 @@ function groupItems(
       total,
       stickers,
       stickerValue,
+      priceChange,
+      priceChangePercent,
     });
   }
 
@@ -238,13 +256,16 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
     }
   }
 
+  // Previous prices for change detection
+  const previousPriceMap = getAllPreviousPrices();
+
   // All items grouped
-  const allGrouped = groupItems(rawItems, priceMap);
+  const allGrouped = groupItems(rawItems, priceMap, previousPriceMap);
   const totalValue = allGrouped.reduce((sum, g) => sum + g.total, 0);
 
   // Main inventory
   const mainRaw = rawItems.filter((i) => !i.casketId);
-  const mainGrouped = groupItems(mainRaw, priceMap);
+  const mainGrouped = groupItems(mainRaw, priceMap, previousPriceMap);
   const mainTotal = mainGrouped.reduce((sum, g) => sum + g.total, 0);
 
   // Storage units
@@ -253,7 +274,7 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
 
   for (const casketId of casketIds) {
     const casketItems = rawItems.filter((i) => i.casketId === casketId);
-    const casketGrouped = groupItems(casketItems, priceMap);
+    const casketGrouped = groupItems(casketItems, priceMap, previousPriceMap);
     const casketTotal = casketGrouped.reduce((sum, g) => sum + g.total, 0);
 
     storageUnits.push({
@@ -296,4 +317,44 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
     historyData,
     dailyHistory,
   };
+}
+
+export async function refreshPrices(steamId: string) {
+  const rawItems = getItemsByProfile(steamId);
+  if (rawItems.length === 0) {
+    logger.info('[Prices] No items in DB for this profile, skipping price refresh');
+    return;
+  }
+
+  const uniqueNames = [...new Set(rawItems.map((i) => i.marketHashName))];
+  logger.info(`[Prices] Refreshing prices for ${uniqueNames.length} unique items...`);
+
+  let totalValue = 0;
+  for (const name of uniqueNames) {
+    try {
+      await getPrices(name);
+    } catch (err) {
+      logger.error(`[Prices] Price fetch error for ${name}:`, (err as Error).message);
+    }
+  }
+
+  // Recalculate total value
+  const updatedPrices = getAllLatestPrices();
+  const updatedPriceMap = new Map(updatedPrices.map((p) => [p.market_hash_name, p.price_eur]));
+  for (const item of rawItems) {
+    const price = updatedPriceMap.get(item.marketHashName);
+    if (price) totalValue += price;
+  }
+
+  const changeInfo = historyService.get24hChange(steamId, totalValue);
+
+  if (changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2) {
+    logger.warn(`[Prices] SKIPPING SNAPSHOT: value too low compared to yesterday`);
+  } else {
+    historyService.saveSnapshot(steamId, totalValue, rawItems.length);
+  }
+
+  updateProfileSummary(steamId, rawItems.length, totalValue);
+  lastRefresh = new Date();
+  logger.info(`[Prices] Price refresh complete. Total: €${totalValue.toFixed(2)}`);
 }

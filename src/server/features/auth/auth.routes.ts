@@ -13,7 +13,6 @@ const router = Router();
 const loginSchema = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
-  sharedSecret: z.string().optional(),
 });
 
 const steamGuardSchema = z.object({
@@ -39,7 +38,7 @@ router.post('/login', authLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Username and password required' });
   }
 
-  const { username, password, sharedSecret } = parsed.data;
+  const { username, password } = parsed.data;
 
   try {
     logger.info('[Auth] Login attempt for:', username);
@@ -47,11 +46,10 @@ router.post('/login', authLimiter, async (req, res) => {
     req.session.credentials = {
       username,
       password: encryptCredential(password),
-      sharedSecret: sharedSecret ? encryptCredential(sharedSecret) : undefined,
     };
 
     steamClient.init();
-    await steamClient.login(username, password, sharedSecret || null);
+    await steamClient.login(username, password);
 
     logger.info('[Auth] Login successful');
 
@@ -80,12 +78,14 @@ router.post('/login', authLimiter, async (req, res) => {
     res.json({ success: true, profile: rowToProfile(profileRow) });
   } catch (err) {
     const message = (err as Error).message;
-    logger.error('[Auth] Login failed:', message);
 
     if (message.includes('Steam Guard') || message.includes('SteamGuard')) {
+      logger.info('[Auth] Steam Guard code requested');
       req.session.needsSteamGuard = true;
       return res.status(200).json({ needsSteamGuard: true, error: 'Steam Guard code required' });
     }
+
+    logger.error('[Auth] Login failed:', message);
 
     let errorMsg = 'Login failed';
     if (message.includes('InvalidPassword')) errorMsg = 'Invalid password';

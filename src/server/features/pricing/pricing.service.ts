@@ -49,7 +49,7 @@ async function getSteamMarketPrice(marketHashName: string): Promise<number | nul
 
       if (response.data?.success && response.data?.lowest_price) {
         const price = parseSteamPrice(response.data.lowest_price);
-        logger.info(`[Price] Steam: ${marketHashName} = \u20ac${price.toFixed(2)}`);
+        logger.debug(`[Price] Steam: ${marketHashName} = \u20ac${price.toFixed(2)}`);
         return price;
       }
 
@@ -99,7 +99,7 @@ export async function getPrices(marketHashName: string): Promise<Price> {
     if (ageHours < 20) {
       return cached;
     }
-    logger.info(`[Price] Cache stale for ${marketHashName} (${ageHours.toFixed(1)}h old). Refreshing...`);
+    logger.debug(`[Price] Cache stale for ${marketHashName} (${ageHours.toFixed(1)}h old). Refreshing...`);
   }
 
   const steamPrice = await getSteamMarketPrice(marketHashName);

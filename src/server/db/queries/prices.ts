@@ -48,6 +48,36 @@ export function getCachedPriceRows(marketHashName: string): PriceRow[] {
     .all(marketHashName) as PriceRow[];
 }
 
+export function getPreviousPrice(marketHashName: string): number | null {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .prepare(
+      `SELECT price_eur FROM prices
+       WHERE market_hash_name = ?
+       ORDER BY timestamp DESC LIMIT 1 OFFSET 1`,
+    )
+    .get(marketHashName) as { price_eur: number | null } | undefined;
+  return row?.price_eur ?? null;
+}
+
+export function getAllPreviousPrices(): Map<string, number | null> {
+  const sqlite = getSqlite();
+  const rows = sqlite
+    .prepare(
+      `SELECT market_hash_name, price_eur FROM (
+         SELECT market_hash_name, price_eur,
+                ROW_NUMBER() OVER (PARTITION BY market_hash_name ORDER BY timestamp DESC) as rn
+         FROM prices
+       ) WHERE rn = 2`,
+    )
+    .all() as PriceRow[];
+  const map = new Map<string, number | null>();
+  for (const row of rows) {
+    map.set(row.market_hash_name, row.price_eur);
+  }
+  return map;
+}
+
 export function getOldAveragePrice(marketHashName: string): number | null {
   const sqlite = getSqlite();
   const row = sqlite

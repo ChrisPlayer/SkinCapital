@@ -1,5 +1,6 @@
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardContent } from '../../components/ui/card.tsx';
+import { useI18n } from '../../lib/i18n.tsx';
 import { formatDateShort } from '../../lib/formatters.ts';
 import type { HistoryPoint } from '../../../shared/types/api.ts';
 
@@ -10,6 +11,7 @@ interface ValueChartProps {
 }
 
 export function ValueChart({ data, days, onDaysChange }: ValueChartProps) {
+  const { t } = useI18n();
   const chartData = data.map((d) => ({
     date: formatDateShort(d.date),
     value: d.value,
@@ -20,7 +22,7 @@ export function ValueChart({ data, days, onDaysChange }: ValueChartProps) {
       <CardContent className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-gray-300 uppercase tracking-wider">
-            Historique de valeur
+            {t('chart.valueHistory')}
           </h2>
           <div className="flex gap-1">
             {[7, 30, 90].map((d) => (
@@ -63,7 +65,7 @@ export function ValueChart({ data, days, onDaysChange }: ValueChartProps) {
                     borderRadius: '8px',
                     color: '#DE9B35',
                   }}
-                  formatter={(value: number) => [`\u20ac${value.toFixed(2)}`, 'Valeur']}
+                  formatter={(value: number) => [`\u20ac${value.toFixed(2)}`, t('chart.value')]}
                 />
                 <Area
                   type="monotone"
@@ -76,7 +78,7 @@ export function ValueChart({ data, days, onDaysChange }: ValueChartProps) {
             </ResponsiveContainer>
           ) : (
             <div className="flex items-center justify-center h-full text-gray-600 text-sm">
-              Pas encore de donnees historiques
+              {t('chart.noData')}
             </div>
           )}
         </div>

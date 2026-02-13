@@ -4,6 +4,7 @@ import { Input } from '../../components/ui/input.tsx';
 import { Button } from '../../components/ui/button.tsx';
 import { ItemCard } from './ItemCard.tsx';
 import { ItemDetailModal } from './ItemDetailModal.tsx';
+import { useI18n } from '../../lib/i18n.tsx';
 import { formatEur } from '../../lib/formatters.ts';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
@@ -23,6 +24,7 @@ export function InventoryTab({ items, total, count, label, showCasketBadge }: In
   const [sort, setSort] = useState<'price' | 'name' | 'float' | 'rarity'>('price');
   const [page, setPage] = useState(1);
   const [selectedItem, setSelectedItem] = useState<ItemGroup | null>(null);
+  const { t } = useI18n();
 
   const filtered = useMemo(() => {
     let result = items;
@@ -58,7 +60,7 @@ export function InventoryTab({ items, total, count, label, showCasketBadge }: In
                 <Input
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-                  placeholder="Rechercher..."
+                  placeholder={t('search.placeholder')}
                   className="pl-10 w-56"
                 />
               </div>
@@ -67,9 +69,9 @@ export function InventoryTab({ items, total, count, label, showCasketBadge }: In
                 onChange={(e) => setSort(e.target.value as typeof sort)}
                 className="h-10 rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white"
               >
-                <option value="price">Prix</option>
-                <option value="name">Nom</option>
-                <option value="float">Float</option>
+                <option value="price">{t('sort.price')}</option>
+                <option value="name">{t('sort.name')}</option>
+                <option value="float">{t('sort.float')}</option>
               </select>
               <p className="text-xl font-bold text-cs-orange">{formatEur(total)}</p>
             </div>
@@ -90,7 +92,7 @@ export function InventoryTab({ items, total, count, label, showCasketBadge }: In
 
       {filtered.length === 0 && (
         <div className="glass-card rounded-2xl p-8 text-center text-gray-500 mt-4">
-          Aucun item trouve
+          {t('empty.noItems')}
         </div>
       )}
 

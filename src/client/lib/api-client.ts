@@ -26,7 +26,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   auth: {
-    login: (data: { username: string; password: string; sharedSecret?: string }) =>
+    login: (data: { username: string; password: string }) =>
       request<{ success?: boolean; needsSteamGuard?: boolean; error?: string; profile?: Profile }>(
         '/auth/login',
         { method: 'POST', body: JSON.stringify(data) },
@@ -54,8 +54,12 @@ export const api = {
     status: () => request<InventoryStatus>('/inventory/status'),
   },
 
-  prices: (marketHashName: string) =>
-    request<PriceDetail>(`/prices/${encodeURIComponent(marketHashName)}`),
+  prices: {
+    get: (marketHashName: string) =>
+      request<PriceDetail>(`/prices/${encodeURIComponent(marketHashName)}`),
+    refresh: (steamId: string) =>
+      request<{ message: string; steamId: string }>(`/prices/refresh?steamId=${steamId}`, { method: 'POST' }),
+  },
 
   export: {
     csvUrl: (steamId: string) => `${BASE}/export/csv?steamId=${steamId}`,

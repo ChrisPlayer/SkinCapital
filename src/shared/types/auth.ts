@@ -7,7 +7,6 @@ export interface AuthStatus {
 export interface LoginRequest {
   username: string;
   password: string;
-  sharedSecret?: string;
 }
 
 export interface SteamGuardRequest {

@@ -29,8 +29,8 @@ export async function getStorageUnits(): Promise<CasketInfo[]> {
     const timeout = setTimeout(() => reject(new Error('Storage Units request timeout')), 30000);
 
     try {
-      csgoClient.requestPlayersProfile(steamClient.steamUser!.steamID!, (err: Error | null) => {
-        if (err) logger.error('[Inventory] Profile request error:', err);
+      csgoClient.requestPlayersProfile(steamClient.steamUser!.steamID!, () => {
+        // Profile data received (used internally by globaloffensive for inventory)
       });
 
       const caskets: CasketInfo[] = [];

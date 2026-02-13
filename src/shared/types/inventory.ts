@@ -34,6 +34,8 @@ export interface ItemGroup {
   total: number;
   stickers: Sticker[];
   stickerValue: number;
+  priceChange: number | null;
+  priceChangePercent: number | null;
 }
 
 export interface StorageUnit {

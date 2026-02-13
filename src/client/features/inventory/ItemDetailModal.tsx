@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogTitle } from '../../components/ui/dialog.tsx';
 import { Skeleton } from '../../components/ui/skeleton.tsx';
 import { useItemPrice } from '../../hooks/useApi.ts';
+import { useI18n } from '../../lib/i18n.tsx';
 import { formatEur, formatPercent } from '../../lib/formatters.ts';
 import { ExternalLink } from 'lucide-react';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
@@ -13,6 +14,7 @@ interface ItemDetailModalProps {
 
 export function ItemDetailModal({ item, open, onOpenChange }: ItemDetailModalProps) {
   const { data: priceData, isLoading } = useItemPrice(item?.marketHashName ?? '');
+  const { t } = useI18n();
 
   if (!item) return null;
 
@@ -69,7 +71,7 @@ export function ItemDetailModal({ item, open, onOpenChange }: ItemDetailModalPro
           {/* Price grid */}
           <div className="grid grid-cols-2 gap-3 mb-6">
             <div className="bg-sf-body p-3 rounded-xl border border-white/[0.06]">
-              <div className="nav-label mb-1.5">Prix Steam</div>
+              <div className="nav-label mb-1.5">{t('item.steamPrice')}</div>
               {isLoading ? (
                 <Skeleton className="h-6 w-20 mx-auto" />
               ) : (
@@ -77,7 +79,7 @@ export function ItemDetailModal({ item, open, onOpenChange }: ItemDetailModalPro
               )}
             </div>
             <div className="bg-sf-body p-3 rounded-xl border border-white/[0.06]">
-              <div className="nav-label mb-1.5">Var. 24h</div>
+              <div className="nav-label mb-1.5">{t('item.var24h')}</div>
               {isLoading ? (
                 <Skeleton className="h-6 w-20 mx-auto" />
               ) : priceData?.change?.hasData ? (

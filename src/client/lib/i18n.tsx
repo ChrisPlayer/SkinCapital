@@ -3,14 +3,20 @@ import { createContext, useContext, useState, useCallback, type ReactNode } from
 export type Locale = 'fr' | 'en';
 export type PriceProvider = 'steam' | 'steam_fees';
 
-// Steam marketplace fee: 10% Steam + 5% CS2 = ~13% buyer pays.
-// When selling, you receive ~87% of listed price.
-// We show the "after fees" value = price * 0.8695 (approximate seller receive).
-const STEAM_FEE_MULTIPLIER = 0.8695;
+function applySteamSellerFees(price: number): number {
+  const grossCents = Math.max(0, Math.round(price * 100));
+  if (grossCents === 0) return 0;
+
+  // Steam market fees are applied separately and rounded up per fee.
+  const steamFeeCents = Math.max(1, Math.ceil(grossCents * 0.10));
+  const gameFeeCents = Math.max(1, Math.ceil(grossCents * 0.05));
+  const netCents = Math.max(0, grossCents - steamFeeCents - gameFeeCents);
+  return netCents / 100;
+}
 
 export function applyFees(price: number | null, provider: PriceProvider): number | null {
   if (price === null) return null;
-  if (provider === 'steam_fees') return price * STEAM_FEE_MULTIPLIER;
+  if (provider === 'steam_fees') return applySteamSellerFees(price);
   return price;
 }
 
@@ -75,12 +81,16 @@ const translations = {
   'dashboard.netValuation': { fr: 'VALEUR_NETTE', en: 'NET_VALUATION' },
   'dashboard.noChartData': { fr: 'AUCUNE_DONNEE', en: 'NO_CHART_DATA' },
   'dashboard.topAssets': { fr: 'Top Items', en: 'Top Assets' },
+  'dashboard.missingPricesTitle': { fr: 'Prix manquants detectes', en: 'Missing prices detected' },
+  'dashboard.missingPricesAction': { fr: 'Completer les prix', en: 'Fetch missing prices' },
 
   // ── Search & Sort ──
   'search.placeholder': { fr: 'Rechercher...', en: 'Search...' },
   'sort.price': { fr: 'Prix', en: 'Price' },
   'sort.name': { fr: 'Nom', en: 'Name' },
   'sort.float': { fr: 'Float', en: 'Float' },
+  'sort.quantity': { fr: 'Quantite', en: 'Quantity' },
+  'sort.by': { fr: 'Trier par', en: 'Sort by' },
 
   // ── Empty states ──
   'empty.noResults': { fr: 'AUCUN_RESULTAT', en: 'NO_RESULTS_FOUND' },
@@ -157,6 +167,7 @@ const translations = {
 
   // ── Inventory ──
   'inventory.includeStorage': { fr: 'Inclure Storage Units', en: 'Include Storage Units' },
+  'storage.emptyUnits': { fr: 'Storage Units vides', en: 'Empty Storage Units' },
 
   // ── Loading ──
   'loading.data': { fr: 'CHARGEMENT...', en: 'LOADING_DATA...' },

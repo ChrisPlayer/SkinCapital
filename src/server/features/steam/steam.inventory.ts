@@ -12,6 +12,50 @@ interface CasketInfo {
   itemCount: number;
 }
 
+export interface StorageUnitFetchSummary {
+  totalUnits: number;
+  nonEmptyUnits: number;
+  emptyUnits: number;
+  loadedUnits: number;
+}
+
+export interface StorageUnitItemsResult {
+  items: InsertItem[];
+  summary: StorageUnitFetchSummary;
+}
+
+export interface InventoryFetchResult {
+  items: InsertItem[];
+  storageSummary: StorageUnitFetchSummary;
+}
+
+interface GCInventoryItem {
+  id?: string | number;
+  casket_id?: string | number;
+  def_index?: number;
+  custom_name?: string;
+  casket_contained_item_count?: number;
+}
+
+function extractStorageUnitsFromInventory(inventory: GCInventoryItem[] | undefined): CasketInfo[] {
+  if (!inventory || inventory.length === 0) {
+    return [];
+  }
+
+  const caskets: CasketInfo[] = [];
+  for (const item of inventory) {
+    if (item.casket_id || (item.def_index && item.def_index === 1201)) {
+      caskets.push({
+        casketId: String(item.id || item.casket_id),
+        name: item.custom_name || 'Storage Unit',
+        itemCount: item.casket_contained_item_count || 0,
+      });
+    }
+  }
+
+  return caskets;
+}
+
 export async function getStorageUnits(): Promise<CasketInfo[]> {
   const csgoClient = steamClient.csgoClient;
   if (!csgoClient) return [];
@@ -29,26 +73,34 @@ export async function getStorageUnits(): Promise<CasketInfo[]> {
     const timeout = setTimeout(() => reject(new Error('Storage Units request timeout')), 30000);
 
     try {
-      csgoClient.requestPlayersProfile(steamClient.steamUser!.steamID!, () => {
-        // Profile data received (used internally by globaloffensive for inventory)
-      });
-
-      const caskets: CasketInfo[] = [];
-      if (csgoClient.inventory && csgoClient.inventory.length > 0) {
-        for (const item of csgoClient.inventory) {
-          if (item.casket_id || (item.def_index && item.def_index === 1201)) {
-            caskets.push({
-              casketId: String(item.id || item.casket_id),
-              name: (item.custom_name as string) || 'Storage Unit',
-              itemCount: (item.casket_contained_item_count as number) || 0,
-            });
-          }
+      const resolveFromInventory = (attempt = 0) => {
+        const inventory = csgoClient.inventory as GCInventoryItem[] | undefined;
+        if ((inventory && inventory.length > 0) || attempt >= 6) {
+          const caskets = extractStorageUnitsFromInventory(inventory);
+          logger.info(`[Inventory] Found ${caskets.length} Storage Units`);
+          resolve(caskets);
+          return;
         }
-      }
 
-      clearTimeout(timeout);
-      logger.info(`[Inventory] Found ${caskets.length} Storage Units`);
-      resolve(caskets);
+        // GC can deliver profile callback slightly before inventory cache is populated.
+        setTimeout(() => resolveFromInventory(attempt + 1), 400);
+      };
+
+      csgoClient.requestPlayersProfile(
+        steamClient.steamUser!.steamID!,
+        (...args: unknown[]) => {
+          clearTimeout(timeout);
+
+          // Some globaloffensive versions send (profile) instead of (err, profile).
+          const firstArg = args[0];
+          if (firstArg instanceof Error) {
+            reject(firstArg);
+            return;
+          }
+
+          resolveFromInventory();
+        },
+      );
     } catch (err) {
       clearTimeout(timeout);
       reject(err);
@@ -104,9 +156,10 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function getAllStorageUnitItems(): Promise<InsertItem[]> {
+export async function getAllStorageUnitItems(): Promise<StorageUnitItemsResult> {
   const caskets = await getStorageUnits();
   const allItems: InsertItem[] = [];
+  let loadedUnits = 0;
 
   const nonEmpty = caskets.filter((c) => c.itemCount > 0);
   const skipped = caskets.length - nonEmpty.length;
@@ -124,6 +177,7 @@ export async function getAllStorageUnitItems(): Promise<InsertItem[]> {
         const items = await loadStorageUnit(casket.casketId);
         items.forEach((i) => (i.casketName = casket.name));
         allItems.push(...items);
+        loadedUnits++;
         loaded = true;
       } catch (err) {
         logger.error(`[Inventory] Failed to load casket ${casket.casketId} (Attempt ${4 - retries}/3):`, (err as Error).message);
@@ -139,7 +193,15 @@ export async function getAllStorageUnitItems(): Promise<InsertItem[]> {
   }
 
   logger.info(`[Inventory] Total items from Storage Units: ${allItems.length}`);
-  return allItems;
+  return {
+    items: allItems,
+    summary: {
+      totalUnits: caskets.length,
+      nonEmptyUnits: nonEmpty.length,
+      emptyUnits: skipped,
+      loadedUnits,
+    },
+  };
 }
 
 export async function getMainInventory(): Promise<InsertItem[]> {
@@ -182,9 +244,10 @@ export async function getMainInventory(): Promise<InsertItem[]> {
   });
 }
 
-export async function getAllInventory(): Promise<InsertItem[]> {
+export async function getAllInventory(): Promise<InventoryFetchResult> {
   const mainItems = await getMainInventory();
-  const storageItems = await getAllStorageUnitItems();
+  const storageResult = await getAllStorageUnitItems();
+  const storageItems = storageResult.items;
 
   for (const item of storageItems) {
     if (!item.iconUrl && iconCache.has(item.marketHashName)) {
@@ -201,5 +264,8 @@ export async function getAllInventory(): Promise<InsertItem[]> {
     }
   }
 
-  return allItems;
+  return {
+    items: allItems,
+    storageSummary: storageResult.summary,
+  };
 }

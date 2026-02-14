@@ -21,10 +21,11 @@ declare module 'express-session' {
   interface SessionData {
     credentials?: {
       username: string;
-      password: string;
+      password?: string;
       sharedSecret?: string;
     };
     needsSteamGuard?: boolean;
+    steamId?: string;
     error?: string;
   }
 }

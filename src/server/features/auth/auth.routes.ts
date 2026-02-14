@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { steamClient } from '../steam/steam.client.ts';
 import { refresh, fetchMissingPrices } from '../inventory/inventory.service.ts';
-import { encryptCredential } from './auth.service.ts';
 import { authLimiter } from '../../middleware/security.ts';
 import { upsertProfile } from '../../db/queries/profiles.ts';
 import { logger } from '../../lib/logger.ts';
@@ -45,7 +44,6 @@ router.post('/login', authLimiter, async (req, res) => {
 
     req.session.credentials = {
       username,
-      password: encryptCredential(password),
     };
 
     steamClient.init();
@@ -54,6 +52,7 @@ router.post('/login', authLimiter, async (req, res) => {
     logger.info('[Auth] Login successful');
 
     const steamId = steamClient.steamUser!.steamID!.getSteamID64();
+    req.session.steamId = steamId;
 
     // Fetch persona name and avatar from Steam
     const personaInfo = await steamClient.getPersonaInfo(steamId);
@@ -86,6 +85,9 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     logger.error('[Auth] Login failed:', message);
+    delete req.session.credentials;
+    delete req.session.needsSteamGuard;
+    delete req.session.steamId;
 
     let errorMsg = 'Login failed';
     if (message.includes('InvalidPassword')) errorMsg = 'Invalid password';
@@ -108,6 +110,7 @@ router.post('/steamguard', authLimiter, async (req, res) => {
     logger.info('[Auth] Steam Guard login successful');
 
     const steamId = steamClient.steamUser!.steamID!.getSteamID64();
+    req.session.steamId = steamId;
     const username = req.session.credentials?.username || 'Unknown';
 
     // Fetch persona name and avatar from Steam
@@ -138,14 +141,33 @@ router.post('/steamguard', authLimiter, async (req, res) => {
   }
 });
 
-router.post('/logout', (_req, res) => {
+router.post('/logout', (req, res) => {
   logger.info('[Auth] Logging out...');
   steamClient.logout();
+  delete req.session.credentials;
+  delete req.session.needsSteamGuard;
+  delete req.session.steamId;
   res.json({ success: true });
 });
 
-router.get('/status', (_req, res) => {
-  res.json(steamClient.getStatus());
+router.get('/status', (req, res) => {
+  const sessionSteamId = req.session.steamId || null;
+  if (!sessionSteamId) {
+    return res.json({
+      isLoggedIn: false,
+      isConnectedToGC: false,
+      steamId: null,
+    });
+  }
+
+  const activeSteamId = steamClient.steamUser?.steamID?.getSteamID64() || null;
+  const ownsActiveSteamSession = !!activeSteamId && activeSteamId === sessionSteamId;
+
+  return res.json({
+    isLoggedIn: true,
+    isConnectedToGC: ownsActiveSteamSession ? steamClient.isConnectedToGC : false,
+    steamId: sessionSteamId,
+  });
 });
 
 export default router;

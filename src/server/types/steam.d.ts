@@ -101,6 +101,10 @@ declare module 'globaloffensive' {
     constructor(steamUser: SteamUser);
     requestPlayersProfile(
       steamId: { getSteamID64(): string },
+      callback: (profile: unknown) => void,
+    ): void;
+    requestPlayersProfile(
+      steamId: { getSteamID64(): string },
       callback: (err: Error | null, profile: unknown) => void,
     ): void;
     getCasketContents(

@@ -23,13 +23,20 @@ export interface DashboardData {
     count: number;
   };
   storageUnits: StorageUnit[];
+  emptyStorageUnits: number;
   totalItems: number;
   uniqueItems: number;
   totalValue: number;
+  missingPrices: MissingPricesSummary;
   change24h: ChangeInfo;
   historyData: HistoryPoint[];
   dailyHistory: DailyHistoryEntry[];
   priceWindow: { from: string; to: string } | null;
+}
+
+export interface MissingPricesSummary {
+  itemCount: number;
+  uniqueCount: number;
 }
 
 export interface HistoryPoint {
@@ -53,6 +60,12 @@ export interface ChangeInfo {
 export interface InventoryStatus {
   isRefreshing: boolean;
   lastRefresh: string | null;
+  progress: RefreshProgress | null;
+}
+
+export interface RefreshProgress {
+  fetched: number;
+  total: number;
 }
 
 export interface PriceDetail {

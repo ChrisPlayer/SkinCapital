@@ -4,6 +4,8 @@ import { insertPrice, getCachedPriceRows } from '../../db/queries/prices.ts';
 import { logger } from '../../lib/logger.ts';
 import type { Price } from '../../../shared/types/inventory.ts';
 
+const inFlightSteamPrices = new Map<string, Promise<number | null>>();
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -69,6 +71,21 @@ async function getSteamMarketPrice(marketHashName: string): Promise<number | nul
   }) as Promise<number | null>;
 }
 
+async function getSteamMarketPriceDedup(marketHashName: string): Promise<number | null> {
+  const existing = inFlightSteamPrices.get(marketHashName);
+  if (existing) {
+    return existing;
+  }
+
+  const request = getSteamMarketPrice(marketHashName)
+    .finally(() => {
+      inFlightSteamPrices.delete(marketHashName);
+    });
+
+  inFlightSteamPrices.set(marketHashName, request);
+  return request;
+}
+
 export function getCachedPrices(marketHashName: string): Price {
   const prices: Price = { steam: null, average: null, timestamp: null };
 
@@ -102,7 +119,7 @@ export async function getPrices(marketHashName: string, force = false): Promise<
     logger.debug(`[Price] Cache stale for ${marketHashName} (${ageHours.toFixed(1)}h old). Refreshing...`);
   }
 
-  const steamPrice = await getSteamMarketPrice(marketHashName);
+  const steamPrice = await getSteamMarketPriceDedup(marketHashName);
 
   if (steamPrice !== null) {
     insertPrice(marketHashName, 'steam', steamPrice);

@@ -31,10 +31,10 @@ export function useDashboardData(
   });
 }
 
-export function useInventoryStatus() {
+export function useInventoryStatus(steamId?: string) {
   return useQuery({
-    queryKey: ['inventory-status'],
-    queryFn: () => api.inventory.status(),
+    queryKey: ['inventory-status', steamId ?? 'all'],
+    queryFn: () => api.inventory.status(steamId),
     refetchInterval: 3000,
   });
 }

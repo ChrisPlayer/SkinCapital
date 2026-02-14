@@ -5,6 +5,7 @@ import { useDashboardData, useRefreshInventory, useRefreshPrices } from '../../h
 import { useRefreshPolling } from '../../hooks/usePolling.ts';
 import { useI18n, type PriceProvider } from '../../lib/i18n.tsx';
 import { formatEur, formatPercent, formatDate } from '../../lib/formatters.ts';
+import { getDisplayItemName } from '../../lib/item-display.ts';
 import { ItemDetailModal } from '../inventory/ItemDetailModal.tsx';
 import { ItemCard } from '../inventory/ItemCard.tsx';
 import { api } from '../../lib/api-client.ts';
@@ -15,7 +16,7 @@ import {
   Activity, DollarSign, Settings, LayoutGrid, List, X,
 } from 'lucide-react';
 import type { ItemGroup, StorageUnit } from '../../../shared/types/inventory.ts';
-import type { HistoryPoint, DailyHistoryEntry } from '../../../shared/types/api.ts';
+import type { HistoryPoint } from '../../../shared/types/api.ts';
 
 type View = 'dashboard' | 'inventory' | 'storage';
 
@@ -75,8 +76,6 @@ function formatPriceWindow(pw: { from: string; to: string }, locale: string): st
   return `${datePart} ${fromTime}\u2013${toTime}`;
 }
 
-const STEAM_CDN = 'https://community.akamai.steamstatic.com/economy/image/';
-
 const PER_PAGE = 30;
 
 // ── Main Component ──
@@ -90,13 +89,13 @@ export function DashboardPage() {
   const [view, setView] = useState<View>('dashboard');
   const [days, setDays] = useState(30);
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<'price' | 'name' | 'float'>('price');
+  const [sort, setSort] = useState<'price' | 'name' | 'float' | 'quantity'>('price');
   const [page, setPage] = useState(1);
   const [selectedItem, setSelectedItem] = useState<ItemGroup | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [includeStorage, setIncludeStorage] = useState(false);
   const [showFeed, setShowFeed] = useState(true);
-  const { isRefreshing, lastRefresh } = useRefreshPolling();
+  const { isRefreshing, lastRefresh, progress } = useRefreshPolling(steamId);
   const { data, isLoading } = useDashboardData(steamId!, days, isRefreshing);
   const refreshMutation = useRefreshInventory();
   const refreshPricesMutation = useRefreshPrices();
@@ -117,11 +116,14 @@ export function DashboardPage() {
   }
 
   const chart = chartPath(data.historyData, 400, 150);
+  const countFormatter = new Intl.NumberFormat(locale === 'fr' ? 'fr-FR' : 'en-US');
+  const formatCount = (value: number) => countFormatter.format(value);
+  const totalStorageUnits = data.storageUnits.length + data.emptyStorageUnits;
 
   const navItems: { id: View; icon: typeof LayoutDashboard; label: string }[] = [
     { id: 'dashboard', icon: LayoutDashboard, label: t('nav.dashboard') },
-    { id: 'inventory', icon: Package, label: `${t('nav.inventory')} (${data.mainInventory.count})` },
-    { id: 'storage', icon: FolderOpen, label: `${t('nav.storageUnits')} (${data.storageUnits.length})` },
+    { id: 'inventory', icon: Package, label: `${t('nav.inventory')} (${formatCount(data.totalItems)})` },
+    { id: 'storage', icon: FolderOpen, label: `${t('nav.storageUnits')} (${formatCount(totalStorageUnits)})` },
   ];
 
   const switchView = (v: View) => { setView(v); setSearch(''); setPage(1); };
@@ -129,7 +131,14 @@ export function DashboardPage() {
   const filterSort = (items: ItemGroup[]) => {
     let r = items;
     if (search) { const q = search.toLowerCase(); r = r.filter((i) => i.marketHashName.toLowerCase().includes(q)); }
-    if (sort === 'name') r = [...r].sort((a, b) => a.marketHashName.localeCompare(b.marketHashName));
+    if (sort === 'name') {
+      r = [...r].sort((a, b) => {
+        const aName = getDisplayItemName(a.marketHashName, a.wear?.name);
+        const bName = getDisplayItemName(b.marketHashName, b.wear?.name);
+        return aName.localeCompare(bName);
+      });
+    }
+    else if (sort === 'quantity') r = [...r].sort((a, b) => b.quantity - a.quantity || b.total - a.total);
     else if (sort === 'float') r = [...r].sort((a, b) => (a.floatValue ?? 1) - (b.floatValue ?? 1));
     else r = [...r].sort((a, b) => b.total - a.total);
     return r;
@@ -142,10 +151,17 @@ export function DashboardPage() {
   const inventoryTotal = includeStorage ? data.totalValue : data.mainInventory.total;
 
   const handleRefreshInventory = () => { if (isOwner) refreshMutation.mutate(); else navigate('/login'); };
-  const handleRefreshPrices = () => { if (steamId) refreshPricesMutation.mutate(steamId); };
+  const handleRefreshPrices = () => {
+    if (steamId) {
+      refreshPricesMutation.mutate(steamId);
+    }
+  };
   const handleLogout = async () => { await logout.mutateAsync(); };
 
   const feedCols = showFeed ? 'xl:grid-cols-[260px_1fr_380px]' : 'xl:grid-cols-[260px_1fr]';
+  const syncProgressText = progress && progress.total > 0
+    ? ` (${progress.fetched}/${progress.total})`
+    : '';
 
   return (
     <>
@@ -224,7 +240,7 @@ export function DashboardPage() {
               {isRefreshing ? (
                 <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sf-cyan/10 border border-sf-cyan/20">
                   <Loader2 className="w-4 h-4 animate-spin text-sf-cyan" />
-                  <span className="text-xs text-sf-cyan">{t('dashboard.syncing')}</span>
+                  <span className="text-xs text-sf-cyan">{t('dashboard.syncing')}{syncProgressText}</span>
                 </div>
               ) : (
                 <>
@@ -238,9 +254,19 @@ export function DashboardPage() {
                   </button>
                 </>
               )}
-              <a href={api.export.csvUrl(steamId!)} download className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors">
-                <Download className="w-4 h-4 text-gray-400" />
-              </a>
+              {isOwner ? (
+                <a href={api.export.csvUrl(steamId!)} download className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors">
+                  <Download className="w-4 h-4 text-gray-400" />
+                </a>
+              ) : (
+                <button
+                  onClick={() => navigate('/login')}
+                  className="flex items-center justify-center w-10 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors"
+                  title={t('auth.login')}
+                >
+                  <Download className="w-4 h-4 text-gray-400" />
+                </button>
+              )}
               {data.priceWindow && (
                 <span className="sf-tag text-gray-400" title={t('dashboard.priceWindowTooltip')}>
                   {formatPriceWindow(data.priceWindow, locale)}
@@ -251,6 +277,25 @@ export function DashboardPage() {
 
           {/* ── CONTENT ── */}
           <div className="relative z-10">
+            {data.missingPrices.itemCount > 0 && (
+              <div className="mb-6 rounded-xl border border-amber-400/25 bg-amber-400/8 p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-amber-200">{t('dashboard.missingPricesTitle')}</p>
+                  <p className="text-xs text-amber-100/80">
+                    {locale === 'fr'
+                      ? `${formatCount(data.missingPrices.itemCount)} items (${formatCount(data.missingPrices.uniqueCount)} uniques) sans prix Steam.`
+                      : `${formatCount(data.missingPrices.itemCount)} items (${formatCount(data.missingPrices.uniqueCount)} unique) are still missing Steam prices.`}
+                  </p>
+                </div>
+                <button
+                  onClick={handleRefreshPrices}
+                  disabled={refreshPricesMutation.isPending}
+                  className="h-10 px-4 rounded-xl bg-amber-300/20 border border-amber-300/30 text-amber-100 text-xs font-semibold hover:bg-amber-300/30 transition-colors disabled:opacity-60"
+                >
+                  {t('dashboard.missingPricesAction')}
+                </button>
+              </div>
+            )}
 
             {/* DASHBOARD */}
             {view === 'dashboard' && (
@@ -325,11 +370,19 @@ export function DashboardPage() {
                       className="w-full h-10 pl-10 pr-4 rounded-xl bg-sf-card border border-white/[0.08] text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-sf-cyan/30"
                     />
                   </div>
-                  <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} className="h-10 rounded-xl border border-white/[0.08] bg-sf-card px-3 text-sm text-white">
-                    <option value="price">{t('sort.price')}</option>
-                    <option value="name">{t('sort.name')}</option>
-                    <option value="float">{t('sort.float')}</option>
-                  </select>
+                  <div className="h-10 min-w-[190px] rounded-xl border border-white/[0.08] bg-sf-card px-3 flex items-center gap-2">
+                    <span className="text-[11px] uppercase tracking-wide text-gray-500 whitespace-nowrap">{t('sort.by')}</span>
+                    <select
+                      value={sort}
+                      onChange={(e) => setSort(e.target.value as typeof sort)}
+                      className="h-full flex-1 bg-transparent text-sm text-white focus:outline-none"
+                    >
+                      <option value="price">{t('sort.price')}</option>
+                      <option value="quantity">{t('sort.quantity')}</option>
+                      <option value="name">{t('sort.name')}</option>
+                      <option value="float">{t('sort.float')}</option>
+                    </select>
+                  </div>
                   <div className="flex rounded-xl border border-white/[0.08] overflow-hidden">
                     <button onClick={() => setViewMode('list')} className={`w-10 h-10 flex items-center justify-center transition-colors ${viewMode === 'list' ? 'bg-sf-cyan/20 text-sf-cyan' : 'bg-sf-card text-gray-500 hover:text-white'}`} title={t('view.list')}><List className="w-4 h-4" /></button>
                     <button onClick={() => setViewMode('cards')} className={`w-10 h-10 flex items-center justify-center transition-colors ${viewMode === 'cards' ? 'bg-sf-cyan/20 text-sf-cyan' : 'bg-sf-card text-gray-500 hover:text-white'}`} title={t('view.cards')}><LayoutGrid className="w-4 h-4" /></button>
@@ -378,11 +431,22 @@ export function DashboardPage() {
             {/* STORAGE */}
             {view === 'storage' && (
               <div className="space-y-4">
-                {data.storageUnits.length === 0 ? (
+                {data.storageUnits.length === 0 && data.emptyStorageUnits === 0 ? (
                   <div className="sf-card p-8 text-center text-sm text-gray-500">{t('empty.noStorageUnits')}</div>
-                ) : data.storageUnits.map((unit) => (
-                  <StorageSection key={unit.casketId} unit={unit} pp={pp} onItemClick={setSelectedItem} />
-                ))}
+                ) : (
+                  <>
+                    {data.storageUnits.map((unit) => (
+                      <StorageSection key={unit.casketId} unit={unit} pp={pp} onItemClick={setSelectedItem} />
+                    ))}
+                    {data.emptyStorageUnits > 0 && (
+                      <div className="sf-card p-5 border border-dashed border-white/15 bg-white/[0.02]">
+                        <p className="text-sm font-semibold text-gray-300">
+                          x{formatCount(data.emptyStorageUnits)} {t('storage.emptyUnits')}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -397,7 +461,7 @@ export function DashboardPage() {
                 <X className="w-4 h-4 text-gray-500" />
               </button>
             </div>
-            <ActivityFeed data={data} pp={pp} isRefreshing={isRefreshing} lastRefresh={lastRefresh} />
+            <ActivityFeed data={data} pp={pp} isRefreshing={isRefreshing} lastRefresh={lastRefresh} progress={progress} />
           </aside>
         )}
         {!showFeed && (
@@ -419,7 +483,8 @@ export function DashboardPage() {
 // ── Sub-Components ──
 
 function AssetRow({ item, pp, onClick }: { item: ItemGroup; pp: PriceProvider; onClick: () => void }) {
-  const tag = weaponTag(item.marketHashName);
+  const displayName = getDisplayItemName(item.marketHashName, item.wear?.name);
+  const tag = weaponTag(displayName);
 
   return (
     <div className="asset-row" onClick={onClick} style={{ borderLeftColor: item.rarity.color }}>
@@ -430,20 +495,20 @@ function AssetRow({ item, pp, onClick }: { item: ItemGroup; pp: PriceProvider; o
 
       {/* Image — fills the cell */}
       {item.imageUrl ? (
-        <img src={item.imageUrl} alt="" className="w-[52px] h-[52px] rounded-lg object-contain" />
+        <img src={item.imageUrl} alt="" className="w-[64px] h-[64px] rounded-lg object-contain" />
       ) : (
-        <div className="w-[52px] h-[52px] rounded-lg bg-white/[0.03] flex items-center justify-center text-xs font-bold text-gray-600">
+        <div className="w-[64px] h-[64px] rounded-lg bg-white/[0.03] flex items-center justify-center text-xs font-bold text-gray-600">
           {tag}
         </div>
       )}
 
       {/* Name + wear tag */}
       <div className="pl-3 min-w-0 overflow-hidden">
-        <div className="font-semibold text-[13px] truncate text-white">{item.marketHashName}</div>
+        <div className="font-semibold text-[13px] truncate text-white">{displayName}</div>
         <div className="flex items-center gap-2 mt-0.5">
           {item.wear && (
             <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold" style={{ color: item.wear.color, background: `${item.wear.color}18` }}>
-              {item.wear.short}
+              {item.wear.name}
             </span>
           )}
           {item.floatValue !== null && (
@@ -499,7 +564,19 @@ function StorageSection({ unit, pp, onItemClick }: { unit: StorageUnit; pp: Pric
   );
 }
 
-function ActivityFeed({ data, pp, isRefreshing, lastRefresh }: { data: import('../../../shared/types/api.ts').DashboardData; pp: PriceProvider; isRefreshing: boolean; lastRefresh: string | null }) {
+function ActivityFeed({
+  data,
+  pp,
+  isRefreshing,
+  lastRefresh,
+  progress,
+}: {
+  data: import('../../../shared/types/api.ts').DashboardData;
+  pp: PriceProvider;
+  isRefreshing: boolean;
+  lastRefresh: string | null;
+  progress: { fetched: number; total: number } | null;
+}) {
   const { t } = useI18n();
   const [showAlerts, setShowAlerts] = useState(true);
   const [showHistory, setShowHistory] = useState(true);
@@ -508,7 +585,6 @@ function ActivityFeed({ data, pp, isRefreshing, lastRefresh }: { data: import('.
     .filter((item) => item.priceChange !== null && item.priceChangePercent !== null && Math.abs(item.priceChange) >= 5 && Math.abs(item.priceChangePercent) >= 5)
     .slice(0, 6)
     .map((item) => {
-      const tag = weaponTag(item.marketHashName);
       const pct = item.priceChangePercent!;
       const change = item.priceChange!;
       const isUp = change > 0;
@@ -521,7 +597,7 @@ function ActivityFeed({ data, pp, isRefreshing, lastRefresh }: { data: import('.
         high: { dot: '#4ADE80', bg: 'bg-[#4ADE8008]', border: 'border-[#4ADE8018]', text: 'text-sf-green' },
         notable: { dot: '#00ccff', bg: 'bg-[#00ccff08]', border: 'border-[#00ccff18]', text: 'text-sf-cyan' },
       }[alertType as string] as { dot: string; bg: string; border: string; text: string };
-      return { item, tag, label, icon, colors, change, pct };
+      return { item, label, icon, colors, change, pct };
     });
 
   return (
@@ -535,7 +611,10 @@ function ActivityFeed({ data, pp, isRefreshing, lastRefresh }: { data: import('.
               <div className="flex items-center gap-2 text-sm font-semibold text-sf-cyan mb-1">
                 <Loader2 className="w-4 h-4 animate-spin" /> {t('feed.syncingTitle')}
               </div>
-              <div className="text-xs text-gray-400">{t('feed.syncingDesc')}</div>
+              <div className="text-xs text-gray-400">
+                {t('feed.syncingDesc')}
+                {progress && progress.total > 0 ? ` (${progress.fetched}/${progress.total})` : ''}
+              </div>
             </div>
           )}
           {lastRefresh && !isRefreshing && (
@@ -558,7 +637,7 @@ function ActivityFeed({ data, pp, isRefreshing, lastRefresh }: { data: import('.
       </button>
       {showAlerts && (
         <div className="space-y-2 mb-6">
-          {priceAlerts.length > 0 ? priceAlerts.map(({ item, tag, label, icon, colors, change, pct }, i) => (
+          {priceAlerts.length > 0 ? priceAlerts.map(({ item, label, icon, colors, change, pct }, i) => (
             <div key={item.marketHashName} className={`${colors.bg} rounded-xl p-3.5 border ${colors.border}`} style={{ opacity: i > 3 ? 0.5 : 1 }}>
               <div className="flex items-center justify-between mb-1">
                 <div className={`flex items-center gap-1.5 text-xs font-semibold ${colors.text}`}>{icon} {label}</div>
@@ -569,7 +648,7 @@ function ActivityFeed({ data, pp, isRefreshing, lastRefresh }: { data: import('.
                   </span>
                 </div>
               </div>
-              <div className="text-xs text-gray-400 truncate">{item.marketHashName}</div>
+              <div className="text-xs text-gray-400 truncate">{getDisplayItemName(item.marketHashName, item.wear?.name)}</div>
             </div>
           )) : (
             <div className="bg-sf-card rounded-xl p-4 border border-dashed border-white/[0.06] text-sm text-gray-500">{t('alerts.noAlerts')}</div>
@@ -610,3 +689,5 @@ function ActivityFeed({ data, pp, isRefreshing, lastRefresh }: { data: import('.
     </>
   );
 }
+
+export default DashboardPage;

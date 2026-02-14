@@ -1,7 +1,16 @@
 import { Router } from 'express';
-import { getDashboardData, refresh, refreshPrices, isRefreshInProgress, getLastRefresh } from './inventory.service.ts';
-import { requireAuth } from '../auth/auth.middleware.ts';
-import { steamClient } from '../steam/steam.client.ts';
+import {
+  getDashboardData,
+  refresh,
+  refreshPrices,
+  isRefreshInProgress,
+  isInventoryRefreshInProgress,
+  isPriceRefreshInProgress,
+  getRefreshProgress,
+  getPriceRefreshProgress,
+  getLastRefresh,
+} from './inventory.service.ts';
+import { requireSteamConnection } from '../auth/auth.middleware.ts';
 import { logger } from '../../lib/logger.ts';
 
 const router = Router();
@@ -21,9 +30,13 @@ router.get('/dashboard', (req, res) => {
   }
 });
 
-router.post('/inventory/refresh', requireAuth, (_req, res) => {
+router.post('/inventory/refresh', requireSteamConnection, (req, res) => {
   try {
-    const steamId = steamClient.steamUser?.steamID?.getSteamID64();
+    if (isRefreshInProgress()) {
+      return res.status(409).json({ error: 'Inventory refresh already in progress' });
+    }
+
+    const steamId = req.session.steamId;
     if (!steamId) {
       return res.status(400).json({ error: 'No active Steam session' });
     }
@@ -40,6 +53,10 @@ router.post('/prices/refresh', (req, res) => {
     if (!steamId) {
       return res.status(400).json({ error: 'steamId query parameter required' });
     }
+    if (isPriceRefreshInProgress(steamId)) {
+      return res.status(409).json({ error: 'Price refresh already in progress' });
+    }
+
     refreshPrices(steamId).catch((err) => logger.error('[Prices] Refresh error:', err));
     res.status(202).json({ message: 'Price refresh started', steamId });
   } catch (err) {
@@ -47,10 +64,20 @@ router.post('/prices/refresh', (req, res) => {
   }
 });
 
-router.get('/inventory/status', (_req, res) => {
+router.get('/inventory/status', (req, res) => {
+  const steamId = (req.query.steamId as string | undefined) || undefined;
+  const inventoryRefreshing = isInventoryRefreshInProgress(steamId);
+  const priceRefreshing = isPriceRefreshInProgress(steamId);
+  const progress = inventoryRefreshing
+    ? getRefreshProgress(steamId)
+    : priceRefreshing
+      ? getPriceRefreshProgress(steamId)
+      : null;
+
   res.json({
-    isRefreshing: isRefreshInProgress(),
+    isRefreshing: inventoryRefreshing || priceRefreshing,
     lastRefresh: getLastRefresh()?.toISOString() ?? null,
+    progress,
   });
 });
 

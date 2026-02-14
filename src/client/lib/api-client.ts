@@ -51,7 +51,8 @@ export const api = {
   inventory: {
     refresh: () =>
       request<{ message: string; steamId: string }>('/inventory/refresh', { method: 'POST' }),
-    status: () => request<InventoryStatus>('/inventory/status'),
+    status: (steamId?: string) =>
+      request<InventoryStatus>(`/inventory/status${steamId ? `?steamId=${steamId}` : ''}`),
   },
 
   prices: {

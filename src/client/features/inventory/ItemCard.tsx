@@ -2,6 +2,7 @@ import { FloatBar } from './FloatBar.tsx';
 import { StickerRow } from './StickerRow.tsx';
 import { formatEur } from '../../lib/formatters.ts';
 import { useI18n } from '../../lib/i18n.tsx';
+import { getDisplayItemName } from '../../lib/item-display.ts';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
 
 interface ItemCardProps {
@@ -12,6 +13,7 @@ interface ItemCardProps {
 
 export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
   const { priceProvider: pp } = useI18n();
+  const displayName = getDisplayItemName(item.marketHashName, item.wear?.name);
   return (
     <div
       className="glass-card rounded-xl p-4 cursor-pointer transition-all duration-200 hover:translate-y-[-2px] hover:shadow-[0_8px_30px_rgba(0,0,0,0.4)] group"
@@ -19,12 +21,12 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
       style={{ borderLeft: `3px solid ${item.rarity.color}` }}
     >
       <div className="flex gap-3">
-        <div className="flex-shrink-0 w-[88px] h-[66px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
+        <div className="flex-shrink-0 w-[120px] h-[90px] rounded-lg bg-black/30 flex items-center justify-center overflow-hidden">
           {item.imageUrl ? (
             <img
               src={item.imageUrl}
               alt=""
-              className="w-[88px] h-[66px] object-contain filter drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform duration-300"
+              className="w-[120px] h-[90px] object-contain filter drop-shadow-[0_2px_8px_rgba(0,0,0,0.5)] group-hover:scale-110 transition-transform duration-300"
               loading="lazy"
               onError={(e) => {
                 (e.target as HTMLImageElement).style.display = 'none';
@@ -38,8 +40,8 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-white truncate" title={item.marketHashName}>
-                {item.marketHashName}
+              <p className="text-xs font-semibold text-white truncate" title={displayName}>
+                {displayName}
               </p>
               <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                 {item.wear && (
@@ -47,7 +49,7 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
                     className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold"
                     style={{ color: item.wear.color, background: `${item.wear.color}20` }}
                   >
-                    {item.wear.short}
+                    {item.wear.name}
                   </span>
                 )}
                 {item.floatValue !== null && item.floatValue !== undefined && (

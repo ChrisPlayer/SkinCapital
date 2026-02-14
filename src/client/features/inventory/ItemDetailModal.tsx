@@ -3,6 +3,7 @@ import { Skeleton } from '../../components/ui/skeleton.tsx';
 import { useItemPrice } from '../../hooks/useApi.ts';
 import { useI18n } from '../../lib/i18n.tsx';
 import { formatEur, formatPercent } from '../../lib/formatters.ts';
+import { getDisplayItemName } from '../../lib/item-display.ts';
 import { ExternalLink } from 'lucide-react';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
 
@@ -19,6 +20,7 @@ export function ItemDetailModal({ item, open, onOpenChange }: ItemDetailModalPro
   if (!item) return null;
 
   const safeName = encodeURIComponent(item.marketHashName);
+  const displayName = getDisplayItemName(item.marketHashName, item.wear?.name);
   const links = [
     {
       label: 'Steam Market',
@@ -59,7 +61,7 @@ export function ItemDetailModal({ item, open, onOpenChange }: ItemDetailModalPro
           </div>
 
           <DialogTitle className="text-lg font-bold text-white mb-1 leading-tight">
-            {item.marketHashName}
+            {displayName}
           </DialogTitle>
           <span
             className="inline-block text-[10px] font-mono px-2.5 py-1 rounded-md mb-6"

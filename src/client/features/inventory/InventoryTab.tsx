@@ -21,7 +21,7 @@ const PER_PAGE = 50;
 
 export function InventoryTab({ items, total, count, label, showCasketBadge }: InventoryTabProps) {
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<'price' | 'name' | 'float' | 'rarity'>('price');
+  const [sort, setSort] = useState<'price' | 'name' | 'float' | 'quantity'>('price');
   const [page, setPage] = useState(1);
   const [selectedItem, setSelectedItem] = useState<ItemGroup | null>(null);
   const { t } = useI18n();
@@ -34,6 +34,8 @@ export function InventoryTab({ items, total, count, label, showCasketBadge }: In
     }
     if (sort === 'name') {
       result = [...result].sort((a, b) => a.marketHashName.localeCompare(b.marketHashName));
+    } else if (sort === 'quantity') {
+      result = [...result].sort((a, b) => b.quantity - a.quantity || b.total - a.total);
     } else if (sort === 'float') {
       result = [...result].sort((a, b) => (a.floatValue ?? 1) - (b.floatValue ?? 1));
     } else {
@@ -64,15 +66,19 @@ export function InventoryTab({ items, total, count, label, showCasketBadge }: In
                   className="pl-10 w-56"
                 />
               </div>
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as typeof sort)}
-                className="h-10 rounded-lg border border-white/10 bg-black/30 px-3 text-sm text-white"
-              >
-                <option value="price">{t('sort.price')}</option>
-                <option value="name">{t('sort.name')}</option>
-                <option value="float">{t('sort.float')}</option>
-              </select>
+              <div className="h-10 min-w-[180px] rounded-lg border border-white/10 bg-black/30 px-3 flex items-center gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-gray-500 whitespace-nowrap">{t('sort.by')}</span>
+                <select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as typeof sort)}
+                  className="h-full flex-1 bg-transparent text-sm text-white focus:outline-none"
+                >
+                  <option value="price">{t('sort.price')}</option>
+                  <option value="quantity">{t('sort.quantity')}</option>
+                  <option value="name">{t('sort.name')}</option>
+                  <option value="float">{t('sort.float')}</option>
+                </select>
+              </div>
               <p className="text-xl font-bold text-cs-orange">{formatEur(total)}</p>
             </div>
           </div>

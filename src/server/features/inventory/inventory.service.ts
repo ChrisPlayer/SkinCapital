@@ -11,9 +11,15 @@ import { getWearLevel } from '../../../shared/constants/wear.ts';
 import { logger } from '../../lib/logger.ts';
 import type { ItemGroup, StorageUnit, Sticker } from '../../../shared/types/inventory.ts';
 import type { DashboardData, DailyHistoryEntry } from '../../../shared/types/api.ts';
+import type { StorageUnitFetchSummary } from '../steam/steam.inventory.ts';
 
 let lastRefresh: Date | null = null;
 let isRefreshing = false;
+let currentRefreshSteamId: string | null = null;
+const activePriceRefreshes = new Set<string>();
+const storageSummaryBySteamId = new Map<string, StorageUnitFetchSummary>();
+const priceRefreshProgressBySteamId = new Map<string, { fetched: number; total: number }>();
+let refreshProgress: { fetched: number; total: number } | null = null;
 
 const STEAM_CDN = 'https://community.akamai.steamstatic.com/economy/image/';
 
@@ -25,6 +31,35 @@ export function isRefreshInProgress() {
   return isRefreshing;
 }
 
+export function isInventoryRefreshInProgress(steamId?: string) {
+  if (!steamId) {
+    return isRefreshing;
+  }
+  return isRefreshing && currentRefreshSteamId === steamId;
+}
+
+export function getRefreshProgress(steamId?: string) {
+  if (steamId && currentRefreshSteamId !== steamId) {
+    return null;
+  }
+  return refreshProgress;
+}
+
+export function isPriceRefreshInProgress(steamId?: string) {
+  if (!steamId) {
+    return activePriceRefreshes.size > 0;
+  }
+  return activePriceRefreshes.has(steamId);
+}
+
+export function getPriceRefreshProgress(steamId?: string) {
+  if (steamId) {
+    return priceRefreshProgressBySteamId.get(steamId) ?? null;
+  }
+  const first = priceRefreshProgressBySteamId.values().next();
+  return first.done ? null : first.value;
+}
+
 export async function refresh(steamId: string) {
   if (isRefreshing) {
     logger.info('[Inventory] Refresh already in progress, skipping');
@@ -32,30 +67,51 @@ export async function refresh(steamId: string) {
   }
 
   isRefreshing = true;
+  currentRefreshSteamId = steamId;
+  refreshProgress = { fetched: 0, total: 0 };
   const startTime = Date.now();
 
   try {
     logger.info(`[Inventory] Starting full refresh for ${steamId}...`);
     await initSchema();
 
-    const items = await getAllInventory();
+    const inventoryResult = await getAllInventory();
+    const items = inventoryResult.items;
+    storageSummaryBySteamId.set(steamId, inventoryResult.storageSummary);
 
     clearItemsByProfile(steamId);
     insertItemsBatch(items, steamId);
 
-    const uniqueNames = [...new Set(items.map((i) => i.marketHashName))];
+    // Disconnect Steam as soon as inventory extraction is done.
+    // Price fetching uses Steam Market HTTP and does not need an active Steam session.
+    steamClient.logout();
+    logger.info('[Inventory] Steam session disconnected after inventory extraction');
+
+    const itemCountByName = new Map<string, number>();
+    for (const item of items) {
+      itemCountByName.set(item.marketHashName, (itemCountByName.get(item.marketHashName) || 0) + 1);
+    }
+    const uniqueNames = [...itemCountByName.keys()];
+    refreshProgress = { fetched: 0, total: uniqueNames.length };
     logger.info(`[Inventory] Fetching prices for ${uniqueNames.length} unique items...`);
 
     let totalValue = 0;
     for (const name of uniqueNames) {
       try {
         const prices = await getPrices(name);
-        const itemCount = items.filter((i) => i.marketHashName === name).length;
+        const itemCount = itemCountByName.get(name) || 0;
         if (prices.average) {
           totalValue += prices.average * itemCount;
         }
       } catch (err) {
         logger.error(`[Inventory] Price fetch error for ${name}:`, (err as Error).message);
+      } finally {
+        if (refreshProgress) {
+          refreshProgress = {
+            fetched: refreshProgress.fetched + 1,
+            total: refreshProgress.total,
+          };
+        }
       }
     }
 
@@ -69,10 +125,6 @@ export async function refresh(steamId: string) {
 
     updateProfileSummary(steamId, items.length, totalValue);
 
-    // Auto-disconnect Steam after inventory refresh
-    steamClient.logout();
-    logger.info('[Inventory] Steam session disconnected after refresh');
-
     lastRefresh = new Date();
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     logger.info(`[Inventory] Refresh complete in ${duration}s. Total value: \u20ac${totalValue.toFixed(2)}`);
@@ -83,6 +135,8 @@ export async function refresh(steamId: string) {
     return { success: false, error: (err as Error).message };
   } finally {
     isRefreshing = false;
+    currentRefreshSteamId = null;
+    refreshProgress = null;
   }
 }
 
@@ -235,6 +289,7 @@ export async function fetchMissingPrices(steamId: string) {
 
 export function getDashboardData(steamId: string, days: number = 30): DashboardData {
   const rawItems = getItemsByProfile(steamId);
+  const storageSummary = storageSummaryBySteamId.get(steamId);
 
   // Build price map from all latest prices
   const latestPrices = getAllLatestPrices();
@@ -262,6 +317,16 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
   // All items grouped
   const allGrouped = groupItems(rawItems, priceMap, previousPriceMap);
   const totalValue = allGrouped.reduce((sum, g) => sum + g.total, 0);
+  const missingPrices = allGrouped.reduce(
+    (acc, group) => {
+      if (group.price === null) {
+        acc.uniqueCount += 1;
+        acc.itemCount += group.quantity;
+      }
+      return acc;
+    },
+    { itemCount: 0, uniqueCount: 0 },
+  );
 
   // Main inventory
   const mainRaw = rawItems.filter((i) => !i.casketId);
@@ -269,16 +334,28 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
   const mainTotal = mainGrouped.reduce((sum, g) => sum + g.total, 0);
 
   // Storage units
-  const casketIds = [...new Set(rawItems.map((i) => i.casketId).filter(Boolean))] as string[];
   const storageUnits: StorageUnit[] = [];
+  const casketItemsMap = new Map<string, typeof rawItems>();
+  const casketAssetMap = new Map<string, (typeof rawItems)[number]>();
 
-  for (const casketId of casketIds) {
-    const casketItems = rawItems.filter((i) => i.casketId === casketId);
+  for (const item of rawItems) {
+    if (item.casketId) {
+      if (!casketItemsMap.has(item.casketId)) {
+        casketItemsMap.set(item.casketId, []);
+      }
+      casketItemsMap.get(item.casketId)!.push(item);
+    }
+    if (item.assetId && !casketAssetMap.has(item.assetId)) {
+      casketAssetMap.set(item.assetId, item);
+    }
+  }
+
+  for (const [casketId, casketItems] of casketItemsMap) {
     const casketGrouped = groupItems(casketItems, priceMap, previousPriceMap);
     const casketTotal = casketGrouped.reduce((sum, g) => sum + g.total, 0);
 
     // Find the storage unit item itself to get its image
-    const casketItem = rawItems.find((i) => i.assetId === casketId);
+    const casketItem = casketAssetMap.get(casketId);
     const casketImageUrl = casketItem ? getBestImage(casketItem.marketHashName, casketItem) : null;
 
     storageUnits.push({
@@ -316,9 +393,11 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
     items: allGrouped,
     mainInventory: { items: mainGrouped, total: mainTotal, count: mainRaw.length },
     storageUnits,
+    emptyStorageUnits: storageSummary?.emptyUnits ?? 0,
     totalItems: rawItems.length,
     uniqueItems: allGrouped.length,
     totalValue,
+    missingPrices,
     change24h,
     historyData,
     dailyHistory,
@@ -327,41 +406,62 @@ export function getDashboardData(steamId: string, days: number = 30): DashboardD
 }
 
 export async function refreshPrices(steamId: string) {
-  const rawItems = getItemsByProfile(steamId);
-  if (rawItems.length === 0) {
-    logger.info('[Prices] No items in DB for this profile, skipping price refresh');
+  if (activePriceRefreshes.has(steamId)) {
+    logger.info(`[Prices] Refresh already in progress for ${steamId}, skipping`);
     return;
   }
 
-  const uniqueNames = [...new Set(rawItems.map((i) => i.marketHashName))];
-  logger.info(`[Prices] Refreshing prices for ${uniqueNames.length} unique items...`);
+  activePriceRefreshes.add(steamId);
 
-  let totalValue = 0;
-  for (const name of uniqueNames) {
-    try {
-      await getPrices(name, true);
-    } catch (err) {
-      logger.error(`[Prices] Price fetch error for ${name}:`, (err as Error).message);
+  try {
+    const rawItems = getItemsByProfile(steamId);
+    if (rawItems.length === 0) {
+      logger.info('[Prices] No items in DB for this profile, skipping price refresh');
+      return;
     }
+
+    const uniqueNames = [...new Set(rawItems.map((i) => i.marketHashName))];
+    priceRefreshProgressBySteamId.set(steamId, { fetched: 0, total: uniqueNames.length });
+    logger.info(`[Prices] Refreshing prices for ${uniqueNames.length} unique items...`);
+
+    let totalValue = 0;
+    for (const name of uniqueNames) {
+      try {
+        await getPrices(name, true);
+      } catch (err) {
+        logger.error(`[Prices] Price fetch error for ${name}:`, (err as Error).message);
+      } finally {
+        const progress = priceRefreshProgressBySteamId.get(steamId);
+        if (progress) {
+          priceRefreshProgressBySteamId.set(steamId, {
+            fetched: progress.fetched + 1,
+            total: progress.total,
+          });
+        }
+      }
+    }
+
+    // Recalculate total value
+    const updatedPrices = getAllLatestPrices();
+    const updatedPriceMap = new Map(updatedPrices.map((p) => [p.market_hash_name, p.price_eur]));
+    for (const item of rawItems) {
+      const price = updatedPriceMap.get(item.marketHashName);
+      if (price) totalValue += price;
+    }
+
+    const changeInfo = historyService.get24hChange(steamId, totalValue);
+
+    if (changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2) {
+      logger.warn(`[Prices] SKIPPING SNAPSHOT: value too low compared to yesterday`);
+    } else {
+      historyService.saveSnapshot(steamId, totalValue, rawItems.length);
+    }
+
+    updateProfileSummary(steamId, rawItems.length, totalValue);
+    lastRefresh = new Date();
+    logger.info(`[Prices] Price refresh complete. Total: €${totalValue.toFixed(2)}`);
+  } finally {
+    activePriceRefreshes.delete(steamId);
+    priceRefreshProgressBySteamId.delete(steamId);
   }
-
-  // Recalculate total value
-  const updatedPrices = getAllLatestPrices();
-  const updatedPriceMap = new Map(updatedPrices.map((p) => [p.market_hash_name, p.price_eur]));
-  for (const item of rawItems) {
-    const price = updatedPriceMap.get(item.marketHashName);
-    if (price) totalValue += price;
-  }
-
-  const changeInfo = historyService.get24hChange(steamId, totalValue);
-
-  if (changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2) {
-    logger.warn(`[Prices] SKIPPING SNAPSHOT: value too low compared to yesterday`);
-  } else {
-    historyService.saveSnapshot(steamId, totalValue, rawItems.length);
-  }
-
-  updateProfileSummary(steamId, rawItems.length, totalValue);
-  lastRefresh = new Date();
-  logger.info(`[Prices] Price refresh complete. Total: €${totalValue.toFixed(2)}`);
 }

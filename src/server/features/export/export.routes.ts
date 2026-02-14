@@ -1,14 +1,23 @@
 import { Router } from 'express';
 import { getItemsByProfile } from '../../db/queries/items.ts';
 import { getCachedPrices } from '../pricing/pricing.service.ts';
+import { requireAuth } from '../auth/auth.middleware.ts';
 
 const router = Router();
 
-router.get('/export/csv', (req, res) => {
+router.get('/export/csv', requireAuth, (req, res) => {
   try {
     const steamId = req.query.steamId as string;
     if (!steamId) {
       return res.status(400).json({ error: 'steamId query parameter required' });
+    }
+
+    const ownerSteamId = req.session.steamId;
+    if (!ownerSteamId) {
+      return res.status(400).json({ error: 'No authenticated session' });
+    }
+    if (ownerSteamId !== steamId) {
+      return res.status(403).json({ error: 'Forbidden: you can only export your own profile' });
     }
 
     const items = getItemsByProfile(steamId);

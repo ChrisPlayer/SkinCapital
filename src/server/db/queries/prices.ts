@@ -30,6 +30,22 @@ export function getAllLatestPrices(): PriceRow[] {
     .all() as PriceRow[];
 }
 
+export function getAllLatestPricesBySource(source: string): PriceRow[] {
+  const sqlite = getSqlite();
+  return sqlite
+    .prepare(
+      `SELECT p1.* FROM prices p1
+       INNER JOIN (
+         SELECT market_hash_name, MAX(timestamp) as max_ts
+         FROM prices
+         WHERE source = ?
+         GROUP BY market_hash_name
+       ) p2 ON p1.market_hash_name = p2.market_hash_name AND p1.timestamp = p2.max_ts
+       WHERE p1.source = ?`,
+    )
+    .all(source, source) as PriceRow[];
+}
+
 export function insertPrice(marketHashName: string, source: string, priceEur: number) {
   const sqlite = getSqlite();
   sqlite
@@ -78,6 +94,25 @@ export function getAllPreviousPrices(): Map<string, number | null> {
   return map;
 }
 
+export function getAllPreviousPricesBySource(source: string): Map<string, number | null> {
+  const sqlite = getSqlite();
+  const rows = sqlite
+    .prepare(
+      `SELECT market_hash_name, price_eur FROM (
+         SELECT market_hash_name, price_eur,
+                ROW_NUMBER() OVER (PARTITION BY market_hash_name ORDER BY timestamp DESC) as rn
+         FROM prices
+         WHERE source = ?
+       ) WHERE rn = 2`,
+    )
+    .all(source) as PriceRow[];
+  const map = new Map<string, number | null>();
+  for (const row of rows) {
+    map.set(row.market_hash_name, row.price_eur);
+  }
+  return map;
+}
+
 export function getLatestPriceWindow(): { from: string; to: string } | null {
   const sqlite = getSqlite();
   const row = sqlite
@@ -87,6 +122,22 @@ export function getLatestPriceWindow(): { from: string; to: string } | null {
        )`,
     )
     .get() as { from_ts: string | null; to_ts: string | null } | undefined;
+  if (!row?.from_ts || !row?.to_ts) return null;
+  return { from: row.from_ts, to: row.to_ts };
+}
+
+export function getLatestPriceWindowBySource(source: string): { from: string; to: string } | null {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .prepare(
+      `SELECT MIN(max_ts) as from_ts, MAX(max_ts) as to_ts FROM (
+         SELECT MAX(timestamp) as max_ts
+         FROM prices
+         WHERE source = ?
+         GROUP BY market_hash_name
+       )`,
+    )
+    .get(source) as { from_ts: string | null; to_ts: string | null } | undefined;
   if (!row?.from_ts || !row?.to_ts) return null;
   return { from: row.from_ts, to: row.to_ts };
 }

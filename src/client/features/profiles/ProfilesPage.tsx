@@ -32,7 +32,7 @@ export function ProfilesPage() {
       <main className="relative z-10 max-w-5xl mx-auto px-6 py-10">
         <div className="mb-8">
           <h2 className="font-display text-2xl font-bold mb-1">{t('profiles.yourProfiles')}</h2>
-          <span className="font-mono text-xs text-sf-dim">{t('profiles.selectProfile')}</span>
+          <span className="text-sm text-sf-dim">{t('profiles.selectProfile')}</span>
         </div>
 
         {isLoading ? (
@@ -80,7 +80,7 @@ export function ProfilesPage() {
 
                 <div className="font-mono text-[10px] text-sf-dim">
                   {profile.lastRefresh
-                    ? `${t('profiles.lastSync')} // ${formatDate(profile.lastRefresh)}`
+                    ? `${t('profiles.lastSync')}: ${formatDate(profile.lastRefresh)}`
                     : t('profiles.neverSynced')}
                 </div>
               </div>

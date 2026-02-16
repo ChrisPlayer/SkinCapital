@@ -14,8 +14,9 @@ interface ItemDetailModalProps {
 }
 
 export function ItemDetailModal({ item, open, onOpenChange }: ItemDetailModalProps) {
-  const { data: priceData, isLoading } = useItemPrice(item?.marketHashName ?? '');
   const { t, priceProvider } = useI18n();
+  const priceSource = priceProvider === 'csfloat' ? 'csfloat' : 'steam';
+  const { data: priceData, isLoading } = useItemPrice(item?.marketHashName ?? '', priceSource);
 
   if (!item) return null;
 
@@ -63,12 +64,18 @@ export function ItemDetailModal({ item, open, onOpenChange }: ItemDetailModalPro
           <DialogTitle className="text-lg font-bold text-white mb-1 leading-tight">
             {displayName}
           </DialogTitle>
-          <span
-            className="inline-block text-[10px] font-mono px-2.5 py-1 rounded-md mb-6"
-            style={{ background: item.rarity.bg, color: item.rarity.color, border: `1px solid ${item.rarity.color}33` }}
-          >
-            {item.rarity.name}
-          </span>
+          {item.wear ? (
+            <span
+              className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-md mb-6"
+              style={{ background: `${item.wear.color}20`, color: item.wear.color, border: `1px solid ${item.wear.color}33` }}
+            >
+              {item.wear.name}
+            </span>
+          ) : (
+            <span className="inline-block text-[10px] font-semibold px-2.5 py-1 rounded-md mb-6 bg-white/5 text-gray-400 border border-white/10">
+              Item
+            </span>
+          )}
 
           {/* Price grid */}
           <div className="grid grid-cols-2 gap-3 mb-6">

@@ -2,8 +2,12 @@ import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useInventoryStatus } from './useApi.ts';
 
-export function useRefreshPolling(steamId?: string, onComplete?: () => void) {
-  const { data } = useInventoryStatus(steamId);
+export function useRefreshPolling(
+  steamId?: string,
+  source: 'steam' | 'csfloat' = 'steam',
+  onComplete?: () => void,
+) {
+  const { data } = useInventoryStatus(steamId, source);
   const queryClient = useQueryClient();
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
@@ -22,6 +26,8 @@ export function useRefreshPolling(steamId?: string, onComplete?: () => void) {
 
   return {
     isRefreshing,
+    syncType: data?.syncType ?? null,
+    source: data?.source ?? null,
     lastRefresh: data?.lastRefresh ?? null,
     progress: data?.progress ?? null,
   };

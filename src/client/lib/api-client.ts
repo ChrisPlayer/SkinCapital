@@ -45,21 +45,39 @@ export const api = {
     get: (steamId: string) => request<Profile>(`/profiles/${steamId}`),
   },
 
-  dashboard: (steamId: string, days?: number) =>
-    request<DashboardData>(`/dashboard?steamId=${steamId}${days ? `&days=${days}` : ''}`),
+  dashboard: (steamId: string, days?: number, source: 'steam' | 'csfloat' = 'steam') =>
+    request<DashboardData>(
+      `/dashboard?steamId=${steamId}${days ? `&days=${days}` : ''}&source=${source}`,
+    ),
 
   inventory: {
     refresh: () =>
       request<{ message: string; steamId: string }>('/inventory/refresh', { method: 'POST' }),
-    status: (steamId?: string) =>
-      request<InventoryStatus>(`/inventory/status${steamId ? `?steamId=${steamId}` : ''}`),
+    status: (steamId?: string, source: 'steam' | 'csfloat' = 'steam') =>
+      request<InventoryStatus>(
+        `/inventory/status?source=${source}${steamId ? `&steamId=${steamId}` : ''}`,
+      ),
   },
 
   prices: {
-    get: (marketHashName: string) =>
-      request<PriceDetail>(`/prices/${encodeURIComponent(marketHashName)}`),
-    refresh: (steamId: string) =>
-      request<{ message: string; steamId: string }>(`/prices/refresh?steamId=${steamId}`, { method: 'POST' }),
+    get: (marketHashName: string, source: 'steam' | 'csfloat' = 'steam') =>
+      request<PriceDetail>(`/prices/${encodeURIComponent(marketHashName)}?source=${source}`),
+    refresh: (
+      steamId: string,
+      source: 'steam' | 'csfloat' = 'steam',
+      scope: 'all' | 'stale_or_missing' | 'missing' = 'stale_or_missing',
+    ) =>
+      request<{
+        message: string;
+        steamId: string;
+        source: 'steam' | 'csfloat';
+        scope: 'all' | 'stale_or_missing' | 'missing';
+      }>(
+        `/prices/refresh?steamId=${steamId}&source=${source}&scope=${scope}`,
+        { method: 'POST' },
+      ),
+    cancel: (steamId: string) =>
+      request<{ cancelled: boolean }>(`/prices/cancel?steamId=${steamId}`, { method: 'POST' }),
   },
 
   export: {

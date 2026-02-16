@@ -44,9 +44,9 @@ function extractStorageUnitsFromInventory(inventory: GCInventoryItem[] | undefin
 
   const caskets: CasketInfo[] = [];
   for (const item of inventory) {
-    if (item.casket_id || (item.def_index && item.def_index === 1201)) {
+    if (item.def_index === 1201) {
       caskets.push({
-        casketId: String(item.id || item.casket_id),
+        casketId: String(item.id),
         name: item.custom_name || 'Storage Unit',
         itemCount: item.casket_contained_item_count || 0,
       });

@@ -5,7 +5,7 @@
   "type": "module",
   "description": "CS2 inventory tracker with Storage Units support and price monitoring",
   "scripts": {
-    "dev": "concurrently -k \"tsx watch src/server/index.ts\" \"vite\"",
+    "dev": "concurrently -k \"tsx watch src/server/index.ts\" \"wait-on tcp:3000 && vite\"",
     "build": "vite build",
     "start": "tsx src/server/index.ts",
     "db:generate": "drizzle-kit generate",
@@ -68,6 +68,7 @@
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.1",
-    "vite": "^6.0.6"
+    "vite": "^6.0.6",
+    "wait-on": "^9.0.4"
   }
 }

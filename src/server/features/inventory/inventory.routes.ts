@@ -3,9 +3,12 @@ import {
   getDashboardData,
   refresh,
   refreshPrices,
+  type PriceRefreshScope,
   isRefreshInProgress,
   isInventoryRefreshInProgress,
   isPriceRefreshInProgress,
+  getActivePriceRefreshSource,
+  cancelPriceRefresh,
   getRefreshProgress,
   getPriceRefreshProgress,
   getLastRefresh,
@@ -22,7 +25,8 @@ router.get('/dashboard', (req, res) => {
       return res.status(400).json({ error: 'steamId query parameter required' });
     }
     const days = parseInt(req.query.days as string) || 30;
-    const data = getDashboardData(steamId, days);
+    const source = req.query.source === 'csfloat' ? 'csfloat' : 'steam';
+    const data = getDashboardData(steamId, days, source);
     res.json(data);
   } catch (err) {
     logger.error('[Dashboard] Error:', err);
@@ -53,12 +57,31 @@ router.post('/prices/refresh', (req, res) => {
     if (!steamId) {
       return res.status(400).json({ error: 'steamId query parameter required' });
     }
-    if (isPriceRefreshInProgress(steamId)) {
+    const source = req.query.source === 'csfloat' ? 'csfloat' : 'steam';
+    const scopeParam = req.query.scope as string | undefined;
+    const scope: PriceRefreshScope =
+      scopeParam === 'all' || scopeParam === 'missing' || scopeParam === 'stale_or_missing'
+        ? scopeParam
+        : 'stale_or_missing';
+    if (isPriceRefreshInProgress(steamId) && getActivePriceRefreshSource(steamId) === source) {
       return res.status(409).json({ error: 'Price refresh already in progress' });
     }
 
-    refreshPrices(steamId).catch((err) => logger.error('[Prices] Refresh error:', err));
-    res.status(202).json({ message: 'Price refresh started', steamId });
+    refreshPrices(steamId, source, scope).catch((err) => logger.error('[Prices] Refresh error:', err));
+    res.status(202).json({ message: 'Price refresh started', steamId, source, scope });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+router.post('/prices/cancel', (req, res) => {
+  try {
+    const steamId = req.query.steamId as string;
+    if (!steamId) {
+      return res.status(400).json({ error: 'steamId query parameter required' });
+    }
+    const cancelled = cancelPriceRefresh(steamId);
+    res.status(200).json({ cancelled });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -66,17 +89,23 @@ router.post('/prices/refresh', (req, res) => {
 
 router.get('/inventory/status', (req, res) => {
   const steamId = (req.query.steamId as string | undefined) || undefined;
+  const requestedSource = req.query.source === 'csfloat' ? 'csfloat' : 'steam';
   const inventoryRefreshing = isInventoryRefreshInProgress(steamId);
   const priceRefreshing = isPriceRefreshInProgress(steamId);
+  const activePriceSource = priceRefreshing && steamId ? getActivePriceRefreshSource(steamId) : null;
+  const priceRefreshingForRequestedSource = priceRefreshing && activePriceSource === requestedSource;
   const progress = inventoryRefreshing
     ? getRefreshProgress(steamId)
-    : priceRefreshing
+    : priceRefreshingForRequestedSource
       ? getPriceRefreshProgress(steamId)
       : null;
+  const syncType = inventoryRefreshing ? 'inventory' : priceRefreshingForRequestedSource ? 'prices' : null;
 
   res.json({
-    isRefreshing: inventoryRefreshing || priceRefreshing,
-    lastRefresh: getLastRefresh()?.toISOString() ?? null,
+    isRefreshing: inventoryRefreshing || priceRefreshingForRequestedSource,
+    syncType,
+    source: syncType === 'prices' ? activePriceSource : null,
+    lastRefresh: getLastRefresh(steamId, requestedSource)?.toISOString() ?? null,
     progress,
   });
 });

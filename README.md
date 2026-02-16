@@ -37,6 +37,15 @@ npm start
 | `SESSION_SECRET` | Cle de chiffrement AES-256-GCM pour les credentials Steam en session | - |
 | `NODE_ENV` | `development` ou `production` | `development` |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
+| `STEAM_QUEUE_*` | Reglage fin de la cadence API Steam Market | `1 req / 3.5s` |
+| `PRICE_STALE_HOURS` | Seuil d'age (heures) avant auto-refresh prix cron | `20` |
+| `CSFLOAT_ENABLED` | Active la source de prix CSFloat | `true` |
+| `CSFLOAT_QUEUE_*` | Reglage fin de la cadence API CSFloat | `1 req / 1.5s` |
+| `CSFLOAT_USD_TO_EUR` | Taux de conversion CSFloat (USD vers EUR) | `0.92` |
+| `CSFLOAT_API_KEY` | Cle API CSFloat (requise en pratique, sinon `403`) | - |
+| `CSFLOAT_RATE_LIMIT_COOLDOWN_MS` | Attente de base (ms) apres un `429` CSFloat | `60000` |
+| `CSFLOAT_RATE_LIMIT_MAX_COOLDOWN_MS` | Cap max (ms) du cooldown CSFloat (backoff auto) | `300000` |
+| `CSFLOAT_FORBIDDEN_COOLDOWN_MS` | Cooldown applique apres un `401/403` CSFloat | `300000` |
 
 ## Scripts
 
@@ -54,6 +63,7 @@ npm start
 
 - **Storage Units** : lecture des caskets CS2 via Game Coordinator
 - **Prix Steam Market** : cache intelligent (TTL 20h) avec fallback stale
+- **Source CSFloat** : source de prix alternative selectionnable dans les parametres
 - **Historique** : graphique d'evolution de valeur (7/30/90 jours)
 - **Recherche & tri** : temps reel, par prix/nom/float
 - **Export CSV** : telechargement de l'inventaire complet
@@ -96,6 +106,7 @@ data/              SQLite DB + cache schema items
 | Steam Guard demande | Entrer le code 5 chiffres depuis l'app Steam |
 | Timeout GC | Le Game Coordinator CS2 peut etre instable, l'app retente auto |
 | Rate limit 429 | Steam Market ~20 req/min, l'app gere la queue et le cache |
+| CSFloat 401/403 | Verifier `CSFLOAT_API_KEY` (`raw` ou `Bearer <key>`), puis redemarrer |
 | Storage Units vides | Verifier que les caskets contiennent des items |
 | DB corrompue | Supprimer `data/inventory.db` et redemarrer |
 | Port occupe | Changer `PORT` dans `.env` |

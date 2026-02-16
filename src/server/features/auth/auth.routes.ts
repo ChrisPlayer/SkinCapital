@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { steamClient } from '../steam/steam.client.ts';
-import { refresh, fetchMissingPrices } from '../inventory/inventory.service.ts';
+import { refresh, refreshPrices } from '../inventory/inventory.service.ts';
 import { authLimiter } from '../../middleware/security.ts';
 import { upsertProfile } from '../../db/queries/profiles.ts';
 import { logger } from '../../lib/logger.ts';
@@ -66,7 +66,7 @@ router.post('/login', authLimiter, async (req, res) => {
     delete req.session.credentials;
 
     // Check for items without prices first, then do full refresh
-    fetchMissingPrices(steamId).catch((err) => {
+    refreshPrices(steamId, 'steam', 'missing').catch((err) => {
       logger.error('[Auth] Missing prices check error:', (err as Error).message);
     });
 
@@ -126,7 +126,7 @@ router.post('/steamguard', authLimiter, async (req, res) => {
     delete req.session.needsSteamGuard;
 
     // Check for items without prices first, then do full refresh
-    fetchMissingPrices(steamId).catch((err) => {
+    refreshPrices(steamId, 'steam', 'missing').catch((err) => {
       logger.error('[Auth] Missing prices check error:', (err as Error).message);
     });
 

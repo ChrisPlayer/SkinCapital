@@ -73,11 +73,9 @@
 
   /* ── Typography ── */
   .nav-label {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     color: #6b7280;
-    text-transform: uppercase;
-    letter-spacing: 1px;
     display: block;
   }
 
@@ -112,8 +110,7 @@
   .grid-overlay {
     position: absolute;
     inset: 0;
-    background-image: radial-gradient(circle at 2px 2px, rgba(255,255,255,0.02) 1px, transparent 0);
-    background-size: 40px 40px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent 30%);
     pointer-events: none;
     z-index: 0;
   }
@@ -121,20 +118,45 @@
   /* ── Asset rows ── */
   .asset-row {
     display: grid;
-    grid-template-columns: 56px 56px 1fr auto auto;
+    grid-template-columns: 78px 106px minmax(0, 1fr) 150px 140px;
     align-items: center;
-    gap: 0 4px;
+    gap: 0;
     background: #111216;
-    padding: 8px 16px;
+    padding: 0;
     border-radius: 12px;
     border: 1px solid rgba(255,255,255,0.06);
     border-left: 3px solid transparent;
     cursor: pointer;
     transition: all 0.15s ease;
+    overflow: hidden;
   }
   .asset-row:hover {
     background: #16171d;
     border-color: rgba(255,255,255,0.10);
+  }
+  .asset-cell {
+    min-height: 88px;
+    display: flex;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .asset-cell:not(:last-child) {
+    border-right: 1px dotted rgba(255,255,255,0.15);
+  }
+  .asset-cell--qty {
+    justify-content: center;
+  }
+  .asset-cell--image {
+    justify-content: center;
+  }
+  .asset-cell--name {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .asset-cell--price,
+  .asset-cell--total {
+    justify-content: flex-end;
   }
 
   /* ── Feed section titles ── */
@@ -142,8 +164,6 @@
     font-size: 13px;
     font-weight: 600;
     color: #d1d5db;
-    text-transform: uppercase;
-    letter-spacing: 1px;
   }
 
   /* ── Timeline ── */

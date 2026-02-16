@@ -1,7 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth.ts';
-import { useDashboardData, useRefreshInventory, useRefreshPrices } from '../../hooks/useApi.ts';
+import {
+  useDashboardData,
+  useRefreshInventory,
+  useRefreshPrices,
+  useCancelPriceRefresh,
+} from '../../hooks/useApi.ts';
 import { useRefreshPolling } from '../../hooks/usePolling.ts';
 import { useI18n, type PriceProvider } from '../../lib/i18n.tsx';
 import { formatEur, formatPercent, formatDate } from '../../lib/formatters.ts';
@@ -86,6 +91,7 @@ export function DashboardPage() {
   const { status, logout } = useAuth();
   const { t, locale, priceProvider } = useI18n();
   const pp = priceProvider;
+  const priceSource: 'steam' | 'csfloat' = priceProvider === 'csfloat' ? 'csfloat' : 'steam';
   const [view, setView] = useState<View>('dashboard');
   const [days, setDays] = useState(30);
   const [search, setSearch] = useState('');
@@ -95,12 +101,26 @@ export function DashboardPage() {
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [includeStorage, setIncludeStorage] = useState(false);
   const [showFeed, setShowFeed] = useState(true);
-  const { isRefreshing, lastRefresh, progress } = useRefreshPolling(steamId);
-  const { data, isLoading } = useDashboardData(steamId!, days, isRefreshing);
+  const { isRefreshing, syncType, source: activeRefreshSource, lastRefresh, progress } = useRefreshPolling(
+    steamId,
+    priceSource,
+  );
+  const { data, isLoading } = useDashboardData(steamId!, days, priceSource, isRefreshing);
   const refreshMutation = useRefreshInventory();
   const refreshPricesMutation = useRefreshPrices();
+  const cancelPriceRefreshMutation = useCancelPriceRefresh();
 
   const isOwner = status?.isLoggedIn && status?.steamId === steamId;
+  const previousPriceSourceRef = useRef<'steam' | 'csfloat'>(priceSource);
+
+  useEffect(() => {
+    const previousSource = previousPriceSourceRef.current;
+    if (steamId && previousSource !== priceSource) {
+      // Steam + Steam fees share source "steam", so no cancel in this switch.
+      cancelPriceRefreshMutation.mutate(steamId);
+    }
+    previousPriceSourceRef.current = priceSource;
+  }, [steamId, priceSource, cancelPriceRefreshMutation]);
 
   if (!steamId) { navigate('/'); return null; }
 
@@ -153,14 +173,28 @@ export function DashboardPage() {
   const handleRefreshInventory = () => { if (isOwner) refreshMutation.mutate(); else navigate('/login'); };
   const handleRefreshPrices = () => {
     if (steamId) {
-      refreshPricesMutation.mutate(steamId);
+      refreshPricesMutation.mutate({ steamId, source: priceSource, scope: 'stale_or_missing' });
+    }
+  };
+  const handleRefreshMissingPrices = () => {
+    if (steamId) {
+      refreshPricesMutation.mutate({ steamId, source: priceSource, scope: 'missing' });
+    }
+  };
+  const handleCancelPriceRefresh = () => {
+    if (steamId) {
+      cancelPriceRefreshMutation.mutate(steamId);
     }
   };
   const handleLogout = async () => { await logout.mutateAsync(); };
 
   const feedCols = showFeed ? 'xl:grid-cols-[260px_1fr_380px]' : 'xl:grid-cols-[260px_1fr]';
+  const isPriceRefreshForCurrentSource = syncType === 'prices' && activeRefreshSource === priceSource;
   const syncProgressText = progress && progress.total > 0
     ? ` (${progress.fetched}/${progress.total})`
+    : '';
+  const syncSourceText = syncType === 'prices'
+    ? ` - ${activeRefreshSource === 'csfloat' ? 'CSFloat' : activeRefreshSource === 'steam' ? 'Steam' : '...'}`
     : '';
 
   return (
@@ -199,7 +233,7 @@ export function DashboardPage() {
           </nav>
 
           <div className="mt-auto p-5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-            <div className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">{t('dashboard.netValuation')}</div>
+            <div className="text-xs text-gray-500 mb-1">{t('dashboard.netValuation')}</div>
             <div className="font-mono text-2xl font-bold">{formatEur(data.totalValue, pp)}</div>
             {data.change24h.hasData && (
               <div className={`font-mono text-xs mt-1 ${data.change24h.percentage >= 0 ? 'text-sf-green' : 'text-sf-pink'}`}>
@@ -238,13 +272,30 @@ export function DashboardPage() {
             </div>
             <div className="flex items-center gap-2">
               {isRefreshing ? (
-                <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sf-cyan/10 border border-sf-cyan/20">
-                  <Loader2 className="w-4 h-4 animate-spin text-sf-cyan" />
-                  <span className="text-xs text-sf-cyan">{t('dashboard.syncing')}{syncProgressText}</span>
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sf-cyan/10 border border-sf-cyan/20">
+                    <Loader2 className="w-4 h-4 animate-spin text-sf-cyan" />
+                    <span className="text-xs text-sf-cyan">{t('dashboard.syncing')}{syncSourceText}{syncProgressText}</span>
+                  </div>
+                  {syncType === 'prices' && (
+                    <button
+                      onClick={handleCancelPriceRefresh}
+                      disabled={cancelPriceRefreshMutation.isPending}
+                      className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors text-xs text-gray-300 hover:text-white disabled:opacity-60"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      {locale === 'fr' ? 'Annuler' : 'Cancel'}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <>
-                  <button onClick={handleRefreshPrices} className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors text-sm text-gray-300 hover:text-white" title={t('dashboard.refreshPricesTooltip')}>
+                  <button
+                    onClick={handleRefreshPrices}
+                    disabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-colors text-sm text-gray-300 hover:text-white disabled:opacity-60"
+                    title={t('dashboard.refreshPricesTooltip')}
+                  >
                     <DollarSign className="w-4 h-4" />
                     <span className="hidden lg:inline">{t('dashboard.refreshPrices')}</span>
                   </button>
@@ -277,32 +328,12 @@ export function DashboardPage() {
 
           {/* ── CONTENT ── */}
           <div className="relative z-10">
-            {data.missingPrices.itemCount > 0 && (
-              <div className="mb-6 rounded-xl border border-amber-400/25 bg-amber-400/8 p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-semibold text-amber-200">{t('dashboard.missingPricesTitle')}</p>
-                  <p className="text-xs text-amber-100/80">
-                    {locale === 'fr'
-                      ? `${formatCount(data.missingPrices.itemCount)} items (${formatCount(data.missingPrices.uniqueCount)} uniques) sans prix Steam.`
-                      : `${formatCount(data.missingPrices.itemCount)} items (${formatCount(data.missingPrices.uniqueCount)} unique) are still missing Steam prices.`}
-                  </p>
-                </div>
-                <button
-                  onClick={handleRefreshPrices}
-                  disabled={refreshPricesMutation.isPending}
-                  className="h-10 px-4 rounded-xl bg-amber-300/20 border border-amber-300/30 text-amber-100 text-xs font-semibold hover:bg-amber-300/30 transition-colors disabled:opacity-60"
-                >
-                  {t('dashboard.missingPricesAction')}
-                </button>
-              </div>
-            )}
-
             {/* DASHBOARD */}
             {view === 'dashboard' && (
               <>
                 <section className="sf-card p-6 grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-6 mb-8">
                   <div>
-                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{t('dashboard.portfolioPerformance')}</div>
+                    <div className="text-sm font-semibold text-gray-400 mb-2">{t('dashboard.portfolioPerformance')}</div>
                     <div className="text-4xl font-bold mb-1">
                       {formatEur(data.totalValue, pp)}
                       {data.change24h.hasData && (
@@ -312,11 +343,11 @@ export function DashboardPage() {
                       )}
                     </div>
                     <div className="grid grid-cols-2 gap-4 mt-6">
-                      <div><div className="text-[11px] text-gray-500 uppercase mb-1">{t('dashboard.totalItems')}</div><div className="font-mono text-lg">{data.totalItems}</div></div>
-                      <div><div className="text-[11px] text-gray-500 uppercase mb-1">{t('nav.storageUnits')}</div><div className="font-mono text-lg text-sf-purple">{data.storageUnits.length}</div></div>
-                      <div><div className="text-[11px] text-gray-500 uppercase mb-1">{t('dashboard.uniqueItems')}</div><div className="font-mono text-lg">{data.uniqueItems}</div></div>
+                      <div><div className="text-xs text-gray-500 mb-1">{t('dashboard.totalItems')}</div><div className="font-mono text-lg">{data.totalItems}</div></div>
+                      <div><div className="text-xs text-gray-500 mb-1">{t('nav.storageUnits')}</div><div className="font-mono text-lg text-sf-purple">{data.storageUnits.length}</div></div>
+                      <div><div className="text-xs text-gray-500 mb-1">{t('dashboard.uniqueItems')}</div><div className="font-mono text-lg">{data.uniqueItems}</div></div>
                       <div>
-                        <div className="text-[11px] text-gray-500 uppercase mb-1">{t('dashboard.var24h')}</div>
+                        <div className="text-xs text-gray-500 mb-1">{t('dashboard.var24h')}</div>
                         <div className={`font-mono text-lg ${data.change24h.hasData ? (data.change24h.percentage >= 0 ? 'text-sf-green' : 'text-sf-pink') : 'text-gray-600'}`}>
                           {data.change24h.hasData ? formatPercent(data.change24h.percentage) : '\u2014'}
                         </div>
@@ -342,7 +373,7 @@ export function DashboardPage() {
                 </section>
 
                 <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{t('dashboard.topAssets')}</span>
+                  <span className="text-sm font-semibold text-gray-400">{t('dashboard.topAssets')}</span>
                   <div className="flex gap-1">
                     {[7, 30, 90].map((d) => (
                       <button key={d} onClick={() => setDays(d)} className={`px-3 py-1.5 rounded-lg text-xs transition-all ${days === d ? 'bg-sf-cyan/20 text-sf-cyan' : 'text-gray-500 hover:text-gray-300'}`}>{d}J</button>
@@ -371,7 +402,7 @@ export function DashboardPage() {
                     />
                   </div>
                   <div className="h-10 min-w-[190px] rounded-xl border border-white/[0.08] bg-sf-card px-3 flex items-center gap-2">
-                    <span className="text-[11px] uppercase tracking-wide text-gray-500 whitespace-nowrap">{t('sort.by')}</span>
+                    <span className="text-xs text-gray-500 whitespace-nowrap">{t('sort.by')}</span>
                     <select
                       value={sort}
                       onChange={(e) => setSort(e.target.value as typeof sort)}
@@ -461,7 +492,22 @@ export function DashboardPage() {
                 <X className="w-4 h-4 text-gray-500" />
               </button>
             </div>
-            <ActivityFeed data={data} pp={pp} isRefreshing={isRefreshing} lastRefresh={lastRefresh} progress={progress} />
+            <ActivityFeed
+              data={data}
+              pp={pp}
+              locale={locale}
+              isRefreshing={isRefreshing}
+              syncType={syncType}
+              source={activeRefreshSource}
+              selectedPriceSource={priceSource}
+              lastRefresh={lastRefresh}
+              progress={progress}
+              onRefreshPrices={handleRefreshPrices}
+              onRefreshMissingPrices={handleRefreshMissingPrices}
+              onCancelPriceRefresh={handleCancelPriceRefresh}
+              isRefreshPricesPending={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
+              isCancelPriceRefreshPending={cancelPriceRefreshMutation.isPending}
+            />
           </aside>
         )}
         {!showFeed && (
@@ -488,27 +534,36 @@ function AssetRow({ item, pp, onClick }: { item: ItemGroup; pp: PriceProvider; o
 
   return (
     <div className="asset-row" onClick={onClick} style={{ borderLeftColor: item.rarity.color }}>
-      {/* Quantity */}
-      <div className="text-center font-mono text-base font-bold text-white/80">
-        {item.quantity > 1 ? `x${item.quantity}` : ''}
+      <div className="asset-cell asset-cell--qty">
+        <span className="font-mono text-base font-bold text-white/80">
+          {`x${item.quantity}`}
+        </span>
       </div>
 
-      {/* Image — fills the cell */}
-      {item.imageUrl ? (
-        <img src={item.imageUrl} alt="" className="w-[64px] h-[64px] rounded-lg object-contain" />
-      ) : (
-        <div className="w-[64px] h-[64px] rounded-lg bg-white/[0.03] flex items-center justify-center text-xs font-bold text-gray-600">
-          {tag}
-        </div>
-      )}
+      <div className="asset-cell asset-cell--image">
+        {item.imageUrl ? (
+          <img src={item.imageUrl} alt="" className="w-[76px] h-[76px] rounded-lg object-contain" />
+        ) : (
+          <div className="w-[76px] h-[76px] rounded-lg bg-white/[0.03] flex items-center justify-center text-xs font-semibold text-gray-500">
+            {tag || 'Item'}
+          </div>
+        )}
+      </div>
 
-      {/* Name + wear tag */}
-      <div className="pl-3 min-w-0 overflow-hidden">
+      <div className="asset-cell asset-cell--name min-w-0 overflow-hidden">
         <div className="font-semibold text-[13px] truncate text-white">{displayName}</div>
         <div className="flex items-center gap-2 mt-0.5">
           {item.wear && (
-            <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold" style={{ color: item.wear.color, background: `${item.wear.color}18` }}>
+            <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold" style={{ color: item.wear.color, background: `${item.wear.color}18` }}>
               {item.wear.name}
+            </span>
+          )}
+          {!item.wear && (
+            <span
+              className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold"
+              style={{ color: item.rarity.color, background: item.rarity.bg }}
+            >
+              {item.rarity.name}
             </span>
           )}
           {item.floatValue !== null && (
@@ -517,12 +572,14 @@ function AssetRow({ item, pp, onClick }: { item: ItemGroup; pp: PriceProvider; o
         </div>
       </div>
 
-      {/* Price */}
-      <div className="font-mono text-right font-bold text-base pl-3">{formatEur(item.price, pp)}</div>
+      <div className="asset-cell asset-cell--price">
+        <span className="font-mono text-right font-bold text-base">{formatEur(item.price, pp)}</span>
+      </div>
 
-      {/* Total */}
-      <div className={`font-mono text-xs text-right pl-2 ${item.quantity > 1 && item.total > 0 ? 'text-sf-green' : 'text-transparent'}`}>
-        {item.quantity > 1 ? formatEur(item.total, pp) : '\u00A0'}
+      <div className="asset-cell asset-cell--total">
+        <span className={`font-mono text-xs text-right ${item.quantity > 1 && item.total > 0 ? 'text-sf-green' : 'text-gray-600'}`}>
+          {item.quantity > 1 ? formatEur(item.total, pp) : '-'}
+        </span>
       </div>
     </div>
   );
@@ -567,19 +624,45 @@ function StorageSection({ unit, pp, onItemClick }: { unit: StorageUnit; pp: Pric
 function ActivityFeed({
   data,
   pp,
+  locale,
   isRefreshing,
+  syncType,
+  source,
+  selectedPriceSource,
   lastRefresh,
   progress,
+  onRefreshPrices,
+  onRefreshMissingPrices,
+  onCancelPriceRefresh,
+  isRefreshPricesPending,
+  isCancelPriceRefreshPending,
 }: {
   data: import('../../../shared/types/api.ts').DashboardData;
   pp: PriceProvider;
+  locale: 'fr' | 'en';
   isRefreshing: boolean;
+  syncType: 'inventory' | 'prices' | null;
+  source: 'steam' | 'csfloat' | null;
+  selectedPriceSource: 'steam' | 'csfloat';
   lastRefresh: string | null;
   progress: { fetched: number; total: number } | null;
+  onRefreshPrices: () => void;
+  onRefreshMissingPrices: () => void;
+  onCancelPriceRefresh: () => void;
+  isRefreshPricesPending: boolean;
+  isCancelPriceRefreshPending: boolean;
 }) {
   const { t } = useI18n();
   const [showAlerts, setShowAlerts] = useState(true);
   const [showHistory, setShowHistory] = useState(true);
+  const countFormatter = new Intl.NumberFormat(locale === 'fr' ? 'fr-FR' : 'en-US');
+  const staleHours = data.priceWindow
+    ? Math.max(0, (Date.now() - new Date(data.priceWindow.to + (data.priceWindow.to.includes('Z') ? '' : 'Z')).getTime()) / (1000 * 60 * 60))
+    : null;
+  const pricesAreStale = staleHours !== null && staleHours >= 20;
+  const syncSourceText = syncType === 'prices'
+    ? ` (${source === 'csfloat' ? 'CSFloat' : source === 'steam' ? 'Steam' : '...'})`
+    : '';
 
   const priceAlerts = data.items
     .filter((item) => item.priceChange !== null && item.priceChangePercent !== null && Math.abs(item.priceChange) >= 5 && Math.abs(item.priceChangePercent) >= 5)
@@ -603,28 +686,80 @@ function ActivityFeed({
   return (
     <>
       {/* SYSTEM */}
-      {(isRefreshing || lastRefresh) && (
+      {(isRefreshing || lastRefresh || pricesAreStale || data.missingPrices.itemCount > 0) && (
         <div className="mb-6">
           <div className="feed-section-title mb-3">{t('feed.system')}</div>
           {isRefreshing && (
             <div className="bg-sf-card rounded-xl p-4 border border-sf-cyan/15 mb-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-sf-cyan mb-1">
-                <Loader2 className="w-4 h-4 animate-spin" /> {t('feed.syncingTitle')}
+                <Loader2 className="w-4 h-4 animate-spin" /> {t('feed.syncingTitle')}{syncSourceText}
               </div>
               <div className="text-xs text-gray-400">
-                {t('feed.syncingDesc')}
+                {syncType === 'prices'
+                  ? (locale === 'fr' ? 'Mise a jour des prix en cours...' : 'Price refresh in progress...')
+                  : t('feed.syncingDesc')}
                 {progress && progress.total > 0 ? ` (${progress.fetched}/${progress.total})` : ''}
               </div>
+              {syncType === 'prices' && (
+                <button
+                  onClick={onCancelPriceRefresh}
+                  disabled={isCancelPriceRefreshPending}
+                  className="mt-3 h-8 px-3 rounded-lg bg-white/[0.04] border border-white/[0.06] text-xs text-gray-300 hover:text-white hover:bg-white/[0.08] transition-colors disabled:opacity-60"
+                >
+                  {locale === 'fr' ? 'Annuler le refresh' : 'Cancel refresh'}
+                </button>
+              )}
             </div>
           )}
           {lastRefresh && !isRefreshing && (
             <div className="bg-sf-card rounded-xl p-4 border border-white/[0.06]">
               <div className="flex items-center gap-2 text-sm font-semibold text-sf-green mb-1">
                 <Activity className="w-4 h-4" /> {t('feed.syncComplete')}
+                <span className="text-[11px] font-mono text-gray-400">
+                  ({selectedPriceSource === 'csfloat' ? 'CSFloat' : 'Steam'})
+                </span>
               </div>
               <div className="text-xs text-gray-400">
                 {data.totalItems} {t('feed.itemsSynced')} &middot; <span className="text-white font-mono">{formatEur(data.totalValue, pp)}</span>
               </div>
+            </div>
+          )}
+
+          {pricesAreStale && (
+            <div className="bg-amber-400/10 rounded-xl p-4 border border-amber-400/25 mt-3">
+              <div className="text-sm font-semibold text-amber-200 mb-1">
+                {locale === 'fr' ? 'Prix a rafraichir' : 'Prices need refresh'}
+              </div>
+              <div className="text-xs text-amber-100/80 mb-3">
+                {locale === 'fr'
+                  ? `Les prix datent d'environ ${Math.round(staleHours || 0)}h. Lance un refresh prix.`
+                  : `Prices are about ${Math.round(staleHours || 0)}h old. Trigger a price refresh.`}
+              </div>
+              <button
+                onClick={onRefreshPrices}
+                disabled={isRefreshPricesPending}
+                className="h-9 px-3 rounded-lg bg-amber-300/20 border border-amber-300/30 text-amber-100 text-xs font-semibold hover:bg-amber-300/30 transition-colors disabled:opacity-60"
+              >
+                {t('dashboard.refreshPrices')}
+              </button>
+            </div>
+          )}
+
+          {data.missingPrices.itemCount > 0 && (
+            <div className="bg-amber-400/8 rounded-xl p-4 border border-amber-400/25 mt-3">
+              <div className="text-sm font-semibold text-amber-200 mb-1">{t('dashboard.missingPricesTitle')}</div>
+              <div className="text-xs text-amber-100/80 mb-3">
+                {locale === 'fr'
+                  ? `${countFormatter.format(data.missingPrices.itemCount)} items (${countFormatter.format(data.missingPrices.uniqueCount)} uniques) sans prix.`
+                  : `${countFormatter.format(data.missingPrices.itemCount)} items (${countFormatter.format(data.missingPrices.uniqueCount)} unique) missing prices.`}
+              </div>
+              <button
+                onClick={onRefreshMissingPrices}
+                disabled={isRefreshPricesPending}
+                className="h-9 px-3 rounded-lg bg-amber-300/20 border border-amber-300/30 text-amber-100 text-xs font-semibold hover:bg-amber-300/30 transition-colors disabled:opacity-60"
+              >
+                {t('dashboard.missingPricesAction')}
+              </button>
             </div>
           )}
         </div>

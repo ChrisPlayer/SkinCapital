@@ -1,6 +1,9 @@
 export function getDisplayItemName(marketHashName: string, wearName?: string | null): string {
   if (!wearName) {
-    return marketHashName;
+    return marketHashName.replace(
+      /\s+\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred|FN|MW|FT|WW|BS)\)$/i,
+      '',
+    );
   }
 
   const suffix = ` (${wearName})`;
@@ -8,5 +11,8 @@ export function getDisplayItemName(marketHashName: string, wearName?: string | n
     return marketHashName.slice(0, -suffix.length);
   }
 
-  return marketHashName;
+  return marketHashName.replace(
+    /\s+\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred|FN|MW|FT|WW|BS)\)$/i,
+    '',
+  );
 }

@@ -59,6 +59,8 @@ export interface ChangeInfo {
 
 export interface InventoryStatus {
   isRefreshing: boolean;
+  syncType: 'inventory' | 'prices' | null;
+  source: 'steam' | 'csfloat' | null;
   lastRefresh: string | null;
   progress: RefreshProgress | null;
 }

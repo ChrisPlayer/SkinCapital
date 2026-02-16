@@ -29,6 +29,7 @@ export interface ItemGroup {
   floatValue: number | null;
   wear: WearLevel | null;
   rarity: Rarity;
+  quality: 'stattrak' | 'souvenir' | null;
   imageUrl: string | null;
   price: number | null;
   total: number;
@@ -51,6 +52,7 @@ export interface StorageUnit {
 
 export interface Price {
   steam: number | null;
+  csfloat: number | null;
   average: number | null;
   timestamp: string | null;
 }

@@ -7,12 +7,14 @@ const router = Router();
 router.get('/prices/:marketHashName', (req, res) => {
   try {
     const name = decodeURIComponent(req.params.marketHashName as string);
+    const source = req.query.source === 'csfloat' ? 'csfloat' : 'steam';
     const prices = getCachedPrices(name);
-    const changeInfo = getItem24hChange(name, prices.average || 0);
+    const selectedPrice = source === 'csfloat' ? prices.csfloat : prices.steam;
+    const changeInfo = getItem24hChange(name, selectedPrice || 0);
 
     res.json({
       name,
-      price: prices.average,
+      price: selectedPrice,
       rawPrice: prices,
       change: changeInfo,
     });

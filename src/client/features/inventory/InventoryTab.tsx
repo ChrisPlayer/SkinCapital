@@ -6,6 +6,7 @@ import { ItemCard } from './ItemCard.tsx';
 import { ItemDetailModal } from './ItemDetailModal.tsx';
 import { useI18n } from '../../lib/i18n.tsx';
 import { formatEur } from '../../lib/formatters.ts';
+import { getDisplayItemName } from '../../lib/item-display.ts';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
 
@@ -33,7 +34,10 @@ export function InventoryTab({ items, total, count, label, showCasketBadge }: In
       result = result.filter((i) => i.marketHashName.toLowerCase().includes(q));
     }
     if (sort === 'name') {
-      result = [...result].sort((a, b) => a.marketHashName.localeCompare(b.marketHashName));
+      result = [...result].sort((a, b) =>
+        getDisplayItemName(a.marketHashName, a.wear?.name).localeCompare(
+          getDisplayItemName(b.marketHashName, b.wear?.name),
+        ));
     } else if (sort === 'quantity') {
       result = [...result].sort((a, b) => b.quantity - a.quantity || b.total - a.total);
     } else if (sort === 'float') {

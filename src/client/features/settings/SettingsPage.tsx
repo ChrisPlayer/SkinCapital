@@ -43,18 +43,24 @@ export function SettingsPage() {
         <div className="sf-card p-6 mb-4">
           <h2 className="text-sm font-semibold text-white mb-1">{t('settings.priceProvider')}</h2>
           <p className="text-xs text-gray-500 mb-4">{t('settings.steamFeesDesc')}</p>
-          <div className="flex gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <button
               onClick={() => setPriceProvider('steam')}
-              className={`flex-1 py-3 rounded-xl text-sm transition-all ${priceProvider === 'steam' ? 'bg-sf-cyan/15 text-sf-cyan border border-sf-cyan/30' : 'bg-white/5 text-gray-400 hover:text-white border border-white/[0.08]'}`}
+              className={`py-3 rounded-xl text-sm transition-all ${priceProvider === 'steam' ? 'bg-sf-cyan/15 text-sf-cyan border border-sf-cyan/30' : 'bg-white/5 text-gray-400 hover:text-white border border-white/[0.08]'}`}
             >
               {t('settings.steam')}
             </button>
             <button
               onClick={() => setPriceProvider('steam_fees')}
-              className={`flex-1 py-3 rounded-xl text-sm transition-all ${priceProvider === 'steam_fees' ? 'bg-sf-cyan/15 text-sf-cyan border border-sf-cyan/30' : 'bg-white/5 text-gray-400 hover:text-white border border-white/[0.08]'}`}
+              className={`py-3 rounded-xl text-sm transition-all ${priceProvider === 'steam_fees' ? 'bg-sf-cyan/15 text-sf-cyan border border-sf-cyan/30' : 'bg-white/5 text-gray-400 hover:text-white border border-white/[0.08]'}`}
             >
               {t('settings.steamFees')}
+            </button>
+            <button
+              onClick={() => setPriceProvider('csfloat')}
+              className={`py-3 rounded-xl text-sm transition-all ${priceProvider === 'csfloat' ? 'bg-sf-cyan/15 text-sf-cyan border border-sf-cyan/30' : 'bg-white/5 text-gray-400 hover:text-white border border-white/[0.08]'}`}
+            >
+              {t('settings.csfloat')}
             </button>
           </div>
         </div>

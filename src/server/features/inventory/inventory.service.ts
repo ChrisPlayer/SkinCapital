@@ -4,7 +4,10 @@ import { initialize as initSchema } from '../steam/steam.schema.ts';
 import {
   getCachedPrices,
   getPrices,
+  refreshPriceWithoutStaleFallback,
+  getSteamWorkerPoolSnapshot,
   getSourceCooldownRemainingMs,
+  type PriceFetchReason,
   type PriceSource,
 } from '../pricing/pricing.service.ts';
 import * as historyService from '../history/history.service.ts';
@@ -45,6 +48,8 @@ const priceRefreshProgressBySteamId = new Map<string, PriceRefreshProgressState>
 const lastInventoryRefreshBySteamId = new Map<string, Date>();
 const lastPriceRefreshBySteamId = new Map<string, { steam: Date | null; csfloat: Date | null }>();
 const missingPriceChecksByProfileSource = new Map<string, Map<string, number>>();
+const noFreshPriceChecksByProfileSource = new Map<string, Map<string, number>>();
+const staleRefreshCursorByProfileSource = new Map<string, number>();
 let priceRefreshTaskCounter = 0;
 // Tracks progress of full inventory refresh (Steam inventory fetch + initial price pass)
 let inventoryRefreshProgress: { fetched: number; total: number } | null = null;
@@ -61,6 +66,28 @@ const MISSING_PRICE_CHECK_COOLDOWN_MS = Math.max(
   5 * 60_000,
   MISSING_PRICE_CHECK_COOLDOWN_MINUTES * 60_000,
 );
+const NO_FRESH_PRICE_CHECK_COOLDOWN_MINUTES = parseInt(
+  process.env.NO_FRESH_PRICE_CHECK_COOLDOWN_MINUTES || '360',
+  10,
+);
+const NO_FRESH_PRICE_CHECK_COOLDOWN_MS = Math.max(
+  30 * 60_000,
+  NO_FRESH_PRICE_CHECK_COOLDOWN_MINUTES * 60_000,
+);
+const PRICE_FETCH_CONCURRENCY = Math.max(
+  10,
+  parseInt(process.env.PRICE_FETCH_CONCURRENCY || process.env.STEAM_PROXY_WORKERS || '10', 10),
+);
+const PRICE_FETCH_RETRY_ATTEMPTS = Math.max(1, parseInt(process.env.PRICE_FETCH_RETRY_ATTEMPTS || '3', 10));
+const PRICE_FETCH_RETRY_BACKOFF_MS = Math.max(200, parseInt(process.env.PRICE_FETCH_RETRY_BACKOFF_MS || '1200', 10));
+const PRICE_REFRESH_MAX_ITEMS_PER_CYCLE = Math.max(
+  0,
+  parseInt(process.env.PRICE_REFRESH_MAX_ITEMS_PER_CYCLE || '300', 10),
+);
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function markPriceRefreshCompleted(steamId: string, source: PriceSource, at: Date) {
   const current = lastPriceRefreshBySteamId.get(steamId) ?? { steam: null, csfloat: null };
@@ -108,6 +135,83 @@ function clearMissingPriceChecked(steamId: string, source: PriceSource, name: st
   if (byName.size === 0) {
     missingPriceChecksByProfileSource.delete(key);
   }
+}
+
+function shouldRefreshNoFreshPriceName(steamId: string, source: PriceSource, name: string, now: number): boolean {
+  const byName = noFreshPriceChecksByProfileSource.get(getMissingPriceCheckKey(steamId, source));
+  if (!byName) return true;
+
+  const checkedAt = byName.get(name);
+  if (!checkedAt) return true;
+
+  if (now - checkedAt >= NO_FRESH_PRICE_CHECK_COOLDOWN_MS) {
+    byName.delete(name);
+    if (byName.size === 0) {
+      noFreshPriceChecksByProfileSource.delete(getMissingPriceCheckKey(steamId, source));
+    }
+    return true;
+  }
+
+  return false;
+}
+
+function markNoFreshPriceChecked(steamId: string, source: PriceSource, name: string, checkedAt: number) {
+  const key = getMissingPriceCheckKey(steamId, source);
+  let byName = noFreshPriceChecksByProfileSource.get(key);
+  if (!byName) {
+    byName = new Map<string, number>();
+    noFreshPriceChecksByProfileSource.set(key, byName);
+  }
+  byName.set(name, checkedAt);
+}
+
+function clearNoFreshPriceChecked(steamId: string, source: PriceSource, name: string) {
+  const key = getMissingPriceCheckKey(steamId, source);
+  const byName = noFreshPriceChecksByProfileSource.get(key);
+  if (!byName) return;
+  byName.delete(name);
+  if (byName.size === 0) {
+    noFreshPriceChecksByProfileSource.delete(key);
+  }
+}
+
+function takeCyclicWindow<T>(items: T[], size: number, start: number): { window: T[]; nextStart: number } {
+  if (size <= 0 || items.length === 0 || size >= items.length) {
+    return { window: items, nextStart: 0 };
+  }
+  const normalizedStart = ((start % items.length) + items.length) % items.length;
+  const window: T[] = [];
+  for (let i = 0; i < size; i++) {
+    window.push(items[(normalizedStart + i) % items.length]);
+  }
+  return {
+    window,
+    nextStart: (normalizedStart + size) % items.length,
+  };
+}
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  handler: (item: T, index: number) => Promise<void>,
+  shouldStop?: () => boolean,
+): Promise<void> {
+  if (items.length === 0) return;
+
+  const workerCount = Math.min(Math.max(1, concurrency), items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      if (shouldStop?.()) return;
+      const index = cursor++;
+      if (index >= items.length) {
+        return;
+      }
+      await handler(items[index], index);
+    }
+  });
+
+  await Promise.all(runners);
 }
 
 export function getLastRefresh(steamId?: string, source?: PriceSource) {
@@ -207,7 +311,7 @@ export async function refresh(steamId: string) {
     logger.info(`[Inventory] Fetching prices for ${uniqueNames.length} unique items...`);
 
     let totalValue = 0;
-    for (const name of uniqueNames) {
+    await runWithConcurrency(uniqueNames, PRICE_FETCH_CONCURRENCY, async (name) => {
       try {
         const prices = await getPrices(name, false, 'steam');
         const itemCount = itemCountByName.get(name) || 0;
@@ -224,7 +328,7 @@ export async function refresh(steamId: string) {
           };
         }
       }
-    }
+    });
 
     const changeInfo = historyService.get24hChange(steamId, totalValue);
 
@@ -564,6 +668,36 @@ export async function refreshPrices(
         );
       }
     }
+    if (scope === 'stale_or_missing') {
+      const now = Date.now();
+      const beforeFilterCount = namesToRefresh.length;
+      namesToRefresh = namesToRefresh.filter((name) =>
+        shouldRefreshNoFreshPriceName(steamId, source, name, now),
+      );
+      const skippedRecentlyChecked = beforeFilterCount - namesToRefresh.length;
+      if (skippedRecentlyChecked > 0) {
+        logger.info(
+          `[Prices] ${source} refresh skipped ${skippedRecentlyChecked} recently no-fresh items (cooldown ${(NO_FRESH_PRICE_CHECK_COOLDOWN_MS / 1000 / 60).toFixed(0)}m).`,
+        );
+      }
+    }
+
+    if (
+      source === 'steam' &&
+      scope === 'stale_or_missing' &&
+      PRICE_REFRESH_MAX_ITEMS_PER_CYCLE > 0 &&
+      namesToRefresh.length > PRICE_REFRESH_MAX_ITEMS_PER_CYCLE
+    ) {
+      const cycleKey = `${steamId}:${source}`;
+      const cursor = staleRefreshCursorByProfileSource.get(cycleKey) || 0;
+      const originalCount = namesToRefresh.length;
+      const windowed = takeCyclicWindow(namesToRefresh, PRICE_REFRESH_MAX_ITEMS_PER_CYCLE, cursor);
+      namesToRefresh = windowed.window;
+      staleRefreshCursorByProfileSource.set(cycleKey, windowed.nextStart);
+      logger.info(
+        `[Prices] ${source} refresh windowed ${namesToRefresh.length}/${originalCount} stale_or_missing items (cursor ${cursor} -> ${windowed.nextStart}).`,
+      );
+    }
 
     if (namesToRefresh.length === 0) {
       const completedAt = new Date();
@@ -574,7 +708,7 @@ export async function refreshPrices(
     }
 
     const initialCooldownMs = getSourceCooldownRemainingMs(source);
-    if (initialCooldownMs > 0) {
+    if (source !== 'steam' && initialCooldownMs > 0) {
       logger.warn(
         `[Prices] ${source} refresh blocked by cooldown (${Math.ceil(initialCooldownMs / 1000)}s remaining).`,
       );
@@ -595,61 +729,242 @@ export async function refreshPrices(
     let unresolvedNames = 0;
     let processedCount = 0;
     let foundCount = 0;
-    for (const name of namesToRefresh) {
-      if (task.cancelled) {
-        logger.info(`[Prices] ${source} refresh cancelled for ${steamId}`);
+    let staleKeptCount = 0;
+    let noPriceCount = 0;
+    let retryScheduledCount = 0;
+    let workerCrashCount = 0;
+    let retryQueueSize = 0;
+    const finalizedNames = new Set<string>();
+
+    const finalizeName = (
+      name: string,
+      freshPrice: number | null,
+      attempt: number,
+      stalePrice: number | null,
+      reason: PriceFetchReason,
+    ) => {
+      if (finalizedNames.has(name)) {
         return;
       }
+      finalizedNames.add(name);
 
-      let fetchedSourcePrice: number | null = null;
-      try {
-        const prices = await getPrices(name, false, source);
-        fetchedSourcePrice = source === 'csfloat' ? prices.csfloat : prices.steam;
-      } catch (err) {
-        logger.error(`[Prices] ${source} price fetch error for ${name}:`, (err as Error).message);
-      } finally {
-        const progress = priceRefreshProgressBySteamId.get(steamId);
-        if (progress && progress.taskId === task.id) {
-          priceRefreshProgressBySteamId.set(steamId, {
-            taskId: progress.taskId,
-            fetched: progress.fetched + 1,
-            total: progress.total,
-            source,
-          });
-        }
-      }
-
-      const cooldownAfterRequestMs = getSourceCooldownRemainingMs(source);
-      if (cooldownAfterRequestMs > 0) {
-        const fetched = priceRefreshProgressBySteamId.get(steamId)?.fetched ?? 0;
-        logger.warn(
-          `[Prices] ${source} refresh paused by cooldown after ${fetched}/${namesToRefresh.length} items (${Math.ceil(cooldownAfterRequestMs / 1000)}s remaining).`,
-        );
-        return;
+      const progress = priceRefreshProgressBySteamId.get(steamId);
+      if (progress && progress.taskId === task.id) {
+        priceRefreshProgressBySteamId.set(steamId, {
+          taskId: progress.taskId,
+          fetched: progress.fetched + 1,
+          total: progress.total,
+          source,
+        });
       }
 
       processedCount += 1;
-      if (fetchedSourcePrice !== null) {
+      if (freshPrice !== null) {
         foundCount += 1;
+        clearNoFreshPriceChecked(steamId, source, name);
         logger.info(
-          `[Prices] ${source} price found: ${name} = \u20ac${fetchedSourcePrice.toFixed(2)}`,
+          `[Prices] ${source} price found: ${name} = \u20ac${freshPrice.toFixed(2)} (attempt ${attempt})`,
         );
+      } else if (stalePrice !== null) {
+        staleKeptCount += 1;
+        if (reason === 'no_price') {
+          markNoFreshPriceChecked(steamId, source, name, Date.now());
+          logger.debug(
+            `[Prices] ${source} no fresh price for ${name} after ${attempt} attempt(s). Stale value kept unchanged (\u20ac${stalePrice.toFixed(2)}).`,
+          );
+        } else {
+          logger.warn(
+            `[Prices] ${source} no fresh price for ${name} after ${attempt} attempt(s), reason ${reason}. Stale value kept unchanged (\u20ac${stalePrice.toFixed(2)}).`,
+          );
+        }
       } else {
-        logger.debug(`[Prices] No ${source} price for: ${name}`);
+        noPriceCount += 1;
+        if (reason === 'no_price') {
+          markNoFreshPriceChecked(steamId, source, name, Date.now());
+          logger.info(`[Prices] ${source} no price for ${name} after ${attempt} attempt(s).`);
+        } else {
+          logger.warn(`[Prices] ${source} no price for ${name} after ${attempt} attempt(s), reason ${reason}.`);
+        }
       }
 
       if (processedCount % 25 === 0 || processedCount === namesToRefresh.length) {
-        logger.info(`[Prices] Progress: ${processedCount}/${namesToRefresh.length} processed, ${foundCount} prices found`);
+        logger.info(
+          `[Prices] Progress: ${processedCount}/${namesToRefresh.length} processed, ${foundCount} fresh, ${staleKeptCount} stale-kept, ${noPriceCount} no-price, ${retryScheduledCount} retries, queue ${retryQueueSize}.`,
+        );
       }
 
       if (scope === 'missing') {
         const now = Date.now();
-        if (fetchedSourcePrice === null) {
+        if (freshPrice === null) {
           markMissingPriceChecked(steamId, source, name, now);
           unresolvedNames += 1;
         } else {
           clearMissingPriceChecked(steamId, source, name);
           resolvedNames += 1;
+        }
+      }
+    };
+
+    const fetchOneName = async (
+      name: string,
+      attempt: number,
+      workerLabel: string,
+    ): Promise<{ status: 'success' | 'retry' | 'failed'; retryAfterMs?: number }> => {
+      const maxAttempts = source === 'steam' ? PRICE_FETCH_RETRY_ATTEMPTS : 1;
+      try {
+        const refreshed = await refreshPriceWithoutStaleFallback(name, source);
+        if (refreshed.freshPrice !== null) {
+          finalizeName(name, refreshed.freshPrice, attempt, refreshed.stalePrice, 'fresh');
+          return { status: 'success' };
+        }
+
+        const shouldRetry =
+          source === 'steam' &&
+          attempt < maxAttempts &&
+          (refreshed.reason === 'no_worker' || refreshed.reason === 'error');
+
+        if (shouldRetry) {
+          const retryAfterMs = Math.max(
+            PRICE_FETCH_RETRY_BACKOFF_MS,
+            Math.min(12_000, Math.max(0, refreshed.cooldownMs || 0)),
+          );
+          logger.info(
+            `[Prices] ${source} check failed for ${name} on ${workerLabel} (attempt ${attempt}/${maxAttempts}, reason ${refreshed.reason}, cooldown ${Math.ceil((refreshed.cooldownMs || 0) / 1000)}s). Releasing for another worker.`,
+          );
+          return { status: 'retry', retryAfterMs };
+        }
+
+        finalizeName(name, null, attempt, refreshed.stalePrice, refreshed.reason);
+        return { status: 'failed' };
+      } catch (err) {
+        logger.error(
+          `[Prices] ${source} price fetch error for ${name} on ${workerLabel} (attempt ${attempt}/${maxAttempts}):`,
+          (err as Error).message,
+        );
+        if (source === 'steam' && attempt < maxAttempts) {
+          return { status: 'retry', retryAfterMs: PRICE_FETCH_RETRY_BACKOFF_MS };
+        }
+        finalizeName(name, null, attempt, null, 'error');
+        return { status: 'failed' };
+      }
+    };
+
+    if (source === 'steam') {
+      type RefreshWorkItem = { name: string; attempt: number; readyAt: number };
+      const queue: RefreshWorkItem[] = namesToRefresh.map((name) => ({ name, attempt: 1, readyAt: 0 }));
+      retryQueueSize = queue.length;
+      const maxAttempts = PRICE_FETCH_RETRY_ATTEMPTS;
+      const snapshot = await getSteamWorkerPoolSnapshot();
+      const effectiveWorkerCap = Math.max(1, Math.min(PRICE_FETCH_CONCURRENCY, snapshot.totalWorkers));
+      const workerCount = Math.min(effectiveWorkerCap, namesToRefresh.length);
+      if (workerCount < PRICE_FETCH_CONCURRENCY) {
+        logger.warn(
+          `[Prices] ${source} concurrency reduced ${PRICE_FETCH_CONCURRENCY} -> ${workerCount} (pool ${snapshot.totalWorkers}: ${snapshot.proxyWorkers} proxy, ${snapshot.directWorkers} direct; ready ${snapshot.readyWorkers}, cooling ${snapshot.coolingWorkers}, busy ${snapshot.busyWorkers}).`,
+        );
+      }
+
+      const popReadyWorkItem = (): { item: RefreshWorkItem | null; waitMs: number } => {
+        if (queue.length === 0) {
+          return { item: null, waitMs: 0 };
+        }
+
+        const now = Date.now();
+        let minWaitMs = Number.POSITIVE_INFINITY;
+        for (let i = 0; i < queue.length; i++) {
+          const item = queue[i];
+          if (item.readyAt <= now) {
+            queue.splice(i, 1);
+            retryQueueSize = queue.length;
+            return { item, waitMs: 0 };
+          }
+          minWaitMs = Math.min(minWaitMs, item.readyAt - now);
+        }
+
+        return { item: null, waitMs: Math.max(25, Math.min(200, Math.ceil(minWaitMs))) };
+      };
+
+      const requeueWorkItem = (item: RefreshWorkItem, workerLabel: string, retryAfterMs?: number) => {
+        const nextAttempt = item.attempt + 1;
+        const exponentialDelayMs = PRICE_FETCH_RETRY_BACKOFF_MS * Math.max(1, 2 ** (nextAttempt - 2));
+        const retryDelayMs = Math.max(exponentialDelayMs, retryAfterMs ?? 0);
+        retryScheduledCount += 1;
+        queue.push({
+          name: item.name,
+          attempt: nextAttempt,
+          readyAt: Date.now() + retryDelayMs,
+        });
+        retryQueueSize = queue.length;
+        logger.info(
+          `[Prices] ${source} requeued ${item.name} for attempt ${nextAttempt}/${maxAttempts} after ${retryDelayMs}ms (${workerLabel}).`,
+        );
+      };
+
+      await Promise.all(
+        Array.from({ length: workerCount }, async (_, idx) => {
+          const workerLabel = `worker-${idx + 1}`;
+          while (true) {
+            if (task.cancelled) {
+              return;
+            }
+
+            let item: RefreshWorkItem | null = null;
+            try {
+              const next = popReadyWorkItem();
+              item = next.item;
+              if (!item) {
+                if (queue.length === 0) {
+                  return;
+                }
+                await sleep(next.waitMs);
+                continue;
+              }
+
+              if (finalizedNames.has(item.name)) {
+                continue;
+              }
+
+              const outcome = await fetchOneName(item.name, item.attempt, workerLabel);
+              if (outcome.status === 'retry') {
+                requeueWorkItem(item, workerLabel, outcome.retryAfterMs);
+              }
+            } catch (err) {
+              workerCrashCount += 1;
+              logger.error(
+                `[Prices] ${source} ${workerLabel} crashed on ${item?.name ?? 'unknown item'}; switching item to another worker:`,
+                (err as Error).message,
+              );
+              if (item && !finalizedNames.has(item.name)) {
+                if (item.attempt < maxAttempts) {
+                  requeueWorkItem(item, workerLabel);
+                } else {
+                  finalizeName(item.name, null, item.attempt, null, 'error');
+                }
+              }
+            }
+          }
+        }),
+      );
+
+      if (task.cancelled) {
+        logger.info(`[Prices] ${source} refresh cancelled for ${steamId}`);
+        return;
+      }
+    } else {
+      for (const name of namesToRefresh) {
+        if (task.cancelled) {
+          logger.info(`[Prices] ${source} refresh cancelled for ${steamId}`);
+          return;
+        }
+
+        await fetchOneName(name, 1, 'worker-1');
+
+        const cooldownAfterRequestMs = getSourceCooldownRemainingMs(source);
+        if (cooldownAfterRequestMs > 0) {
+          const fetched = priceRefreshProgressBySteamId.get(steamId)?.fetched ?? 0;
+          logger.warn(
+            `[Prices] ${source} refresh paused by cooldown after ${fetched}/${namesToRefresh.length} items (${Math.ceil(cooldownAfterRequestMs / 1000)}s remaining).`,
+          );
+          return;
         }
       }
     }
@@ -659,6 +974,10 @@ export async function refreshPrices(
         `[Prices] ${source} missing scope summary: resolved ${resolvedNames}, unresolved ${unresolvedNames}, attempted ${namesToRefresh.length}.`,
       );
     }
+
+    logger.info(
+      `[Prices] ${source} refresh outcome: ${foundCount} fresh, ${staleKeptCount} stale-kept, ${noPriceCount} no-price, ${retryScheduledCount} retries, ${workerCrashCount} worker crashes.`,
+    );
 
     // Recalculate total value for the selected source only
     const updatedPrices = getAllLatestPricesBySource(source);

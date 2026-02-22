@@ -37,8 +37,19 @@ npm start
 | `SESSION_SECRET` | Cle de chiffrement AES-256-GCM pour les credentials Steam en session | - |
 | `NODE_ENV` | `development` ou `production` | `development` |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
-| `STEAM_QUEUE_*` | Reglage fin de la cadence API Steam Market | `1 req / 3.5s` |
+| `PRICE_FETCH_CONCURRENCY` | Nombre de fetch prix Steam en parallele | `10` |
+| `PRICE_FETCH_RETRY_ATTEMPTS` | Tentatives max par item pendant un refresh (sans fallback stale) | `3` |
+| `PRICE_FETCH_RETRY_BACKOFF_MS` | Backoff de base (ms) avant de replanifier un item en echec sur un autre worker | `1200` |
+| `PRICE_REFRESH_MAX_ITEMS_PER_CYCLE` | Limite les items `stale_or_missing` verifies par cycle (rotation auto) | `300` |
+| `STEAM_PROXY_WORKERS` | Nombre de workers Steam (min 10) avec pool de proxies | `10` |
+| `STEAM_DIRECT_WORKERS` | Workers en connexion directe (sans proxy) reserves comme fallback | `1` |
+| `STEAM_PROXY_POOL_SIZE` | Nombre max de proxies gratuits conserves en memoire | `400` |
+| `STEAM_PROXY_REQUEST_ATTEMPTS` | Tentatives max par item via workers/proxies differents | `4` |
+| `STEAM_PROXY_VERIFY_*` | Validation des proxies avant usage (timeout, concurrence, echantillon, max probes) | voir `.env.example` |
+| `STEAM_PROXY_*` | Timeouts/refresh/cooldowns du pool proxy Steam | voir `.env.example` |
+| `STEAM_QUEUE_*` | Compatibilite legacy (fallback pour `STEAM_PROXY_WORKERS`) | `1 req / 3.5s` |
 | `PRICE_STALE_HOURS` | Seuil d'age (heures) avant auto-refresh prix cron | `20` |
+| `NO_FRESH_PRICE_CHECK_COOLDOWN_MINUTES` | Cooldown avant de retester un item qui n'a pas donne de prix frais | `360` |
 | `CSFLOAT_ENABLED` | Active la source de prix CSFloat | `true` |
 | `CSFLOAT_QUEUE_*` | Reglage fin de la cadence API CSFloat | `1 req / 1.5s` |
 | `CSFLOAT_USD_TO_EUR` | Taux de conversion CSFloat (USD vers EUR) | `0.92` |
@@ -105,7 +116,7 @@ data/              SQLite DB + cache schema items
 |---|---|
 | Steam Guard demande | Entrer le code 5 chiffres depuis l'app Steam |
 | Timeout GC | Le Game Coordinator CS2 peut etre instable, l'app retente auto |
-| Rate limit 429 | Steam Market ~20 req/min, l'app gere la queue et le cache |
+| Rate limit 429 | Le cooldown est applique par worker/proxy, les autres workers continuent |
 | CSFloat 401/403 | Verifier `CSFLOAT_API_KEY` (`raw` ou `Bearer <key>`), puis redemarrer |
 | Storage Units vides | Verifier que les caskets contiennent des items |
 | DB corrompue | Supprimer `data/inventory.db` et redemarrer |

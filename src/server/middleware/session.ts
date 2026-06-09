@@ -15,7 +15,10 @@ export const sessionMiddleware = session({
   saveUninitialized: false,
   name: 'cs2tracker_session',
   cookie: {
-    secure: process.env.NODE_ENV === 'production',
+    // Opt-in (not tied to NODE_ENV): a production build served over plain HTTP
+    // on a trusted LAN must still set the cookie. Enable COOKIE_SECURE=true once
+    // the app is reached over HTTPS.
+    secure: process.env.COOKIE_SECURE === 'true',
     httpOnly: true,
     maxAge: 24 * 60 * 60 * 1000,
     sameSite: 'strict',

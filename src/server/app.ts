@@ -15,12 +15,13 @@ import alertsRoutes from './features/alerts/alerts.routes.ts';
 
 export function createApp() {
   const app = express();
+  app.disable('x-powered-by');
 
   // Core middleware
   app.use(helmetMiddleware);
   app.use(corsMiddleware);
-  app.use(express.json());
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '256kb' }));
+  app.use(express.urlencoded({ extended: true, limit: '256kb', parameterLimit: 1000 }));
   app.use(sessionMiddleware);
 
   // CSRF mitigation (Origin check on state-changing requests)

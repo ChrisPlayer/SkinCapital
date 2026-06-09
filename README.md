@@ -4,7 +4,23 @@ Tracker d'inventaire CS2 avec support Storage Units, prix multi-sources (Steam M
 
 **Stack** : Express + TypeScript / React + Vite / SQLite (better-sqlite3 + Drizzle) / shadcn/ui + Tailwind
 
-## Prerequis
+## 💾 Installation simple (Windows — aucune connaissance requise)
+
+➡️ **[Télécharger la dernière version](https://github.com/ChrisPlayer/Inventaire-CS2-V2/releases/latest)** (`SkinCapital-portable-win64-*.zip`)
+
+1. Décompressez le zip où vous voulez (clic droit → *Extraire tout*)
+2. Double-cliquez sur **SkinCapital** → votre navigateur s'ouvre tout seul sur l'application
+3. Pour arrêter : double-cliquez sur **Arreter-SkinCapital**
+
+Rien d'autre à installer (Node est embarqué). Vos données et votre connexion Steam restent sur **votre** ordinateur. Voir le `LISEZMOI.txt` inclus dans le zip.
+
+> Mainteneur : le pack se régénère avec `npm run package:win` (sortie dans `release/`), puis se publie avec `gh release create`.
+
+---
+
+La suite de ce document concerne l'installation **développeur** (depuis les sources).
+
+## Prérequis
 
 - **Node 22** (le champ `engines` impose `>=22 <23` et un fichier `.nvmrc` est fourni).
   Le module natif `better-sqlite3` ne compile pas sur Node 24 — restez sur Node 22.

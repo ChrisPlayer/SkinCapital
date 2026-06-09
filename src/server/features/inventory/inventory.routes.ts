@@ -25,7 +25,7 @@ router.get('/dashboard', (req, res) => {
       return res.status(400).json({ error: 'steamId query parameter required' });
     }
     const days = parseInt(req.query.days as string) || 30;
-    const source = req.query.source === 'csfloat' ? 'csfloat' : 'steam';
+    const source = req.query.source === 'csfloat' ? 'csfloat' : req.query.source === 'skinport' ? 'skinport' : 'steam';
     const data = getDashboardData(steamId, days, source);
     res.json(data);
   } catch (err) {
@@ -44,8 +44,9 @@ router.post('/inventory/refresh', requireSteamConnection, (req, res) => {
     if (!steamId) {
       return res.status(400).json({ error: 'No active Steam session' });
     }
-    refresh(steamId).catch((err) => logger.error('[Dashboard] Refresh error:', err));
-    res.status(202).json({ message: 'Refresh started', steamId });
+    const force = req.query.force === '1' || req.query.force === 'true';
+    refresh(steamId, force).catch((err) => logger.error('[Dashboard] Refresh error:', err));
+    res.status(202).json({ message: 'Refresh started', steamId, force });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }
@@ -57,7 +58,7 @@ router.post('/prices/refresh', (req, res) => {
     if (!steamId) {
       return res.status(400).json({ error: 'steamId query parameter required' });
     }
-    const source = req.query.source === 'csfloat' ? 'csfloat' : 'steam';
+    const source = req.query.source === 'csfloat' ? 'csfloat' : req.query.source === 'skinport' ? 'skinport' : 'steam';
     const scopeParam = req.query.scope as string | undefined;
     const scope: PriceRefreshScope =
       scopeParam === 'all' || scopeParam === 'missing' || scopeParam === 'stale_or_missing'
@@ -89,7 +90,7 @@ router.post('/prices/cancel', (req, res) => {
 
 router.get('/inventory/status', (req, res) => {
   const steamId = (req.query.steamId as string | undefined) || undefined;
-  const requestedSource = req.query.source === 'csfloat' ? 'csfloat' : 'steam';
+  const requestedSource = req.query.source === 'csfloat' ? 'csfloat' : req.query.source === 'skinport' ? 'skinport' : 'steam';
   const inventoryRefreshing = isInventoryRefreshInProgress(steamId);
   const priceRefreshing = isPriceRefreshInProgress(steamId);
   const activePriceSource = priceRefreshing && steamId ? getActivePriceRefreshSource(steamId) : null;

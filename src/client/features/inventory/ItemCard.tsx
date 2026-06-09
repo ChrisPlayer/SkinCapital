@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { FloatBar } from './FloatBar.tsx';
 import { StickerRow } from './StickerRow.tsx';
 import { formatEur } from '../../lib/formatters.ts';
@@ -18,16 +19,23 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
 
   return (
     <div
-      className="glass-card rounded-2xl p-3.5 sm:p-4 cursor-pointer border border-white/[0.08] transition-all duration-200 hover:-translate-y-0.5 hover:border-white/[0.16] hover:shadow-[0_12px_32px_rgba(0,0,0,0.35)]"
+      className="group glass-card relative overflow-hidden rounded-2xl p-3.5 sm:p-4 cursor-pointer border border-white/[0.08] transition-all duration-200 hover:-translate-y-0.5 hover:border-white/[0.16] [content-visibility:auto] [contain-intrinsic-size:auto_280px]"
       onClick={onClick}
-      style={{ boxShadow: `inset 0 1px 0 rgba(255,255,255,0.03), inset 0 0 0 1px ${item.rarity.bg}` }}
+      style={{ '--rarity': item.rarity.color } as CSSProperties}
     >
-      <div className="relative h-[150px] rounded-xl border border-white/[0.06] bg-gradient-to-b from-white/[0.07] to-white/[0.02] overflow-hidden flex items-center justify-center">
+      {/* Rarity accent line (own element so it never overrides the card shadows) */}
+      <div className="absolute inset-x-0 top-0 h-[2px] z-10" style={{ background: item.rarity.color }} />
+      <div
+        className="relative h-[150px] rounded-xl border border-white/[0.06] overflow-hidden flex items-center justify-center"
+        style={{
+          backgroundImage: `radial-gradient(closest-side, ${item.rarity.color}14, transparent 70%), linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02))`,
+        }}
+      >
         {item.imageUrl ? (
           <img
             src={item.imageUrl}
-            alt=""
-            className="w-[190px] h-[140px] object-contain drop-shadow-[0_5px_16px_rgba(0,0,0,0.45)] transition-transform duration-300 hover:scale-105"
+            alt={item.marketHashName}
+            className="w-[190px] h-[140px] object-contain drop-shadow-[0_5px_16px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover:scale-105"
             loading="lazy"
             onError={(e) => {
               (e.target as HTMLImageElement).style.display = 'none';

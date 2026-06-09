@@ -1,6 +1,6 @@
 import express from 'express';
 import path from 'path';
-import { helmetMiddleware, corsMiddleware, apiLimiter } from './middleware/security.ts';
+import { helmetMiddleware, corsMiddleware, apiLimiter, csrfGuard } from './middleware/security.ts';
 import { sessionMiddleware } from './middleware/session.ts';
 import { errorHandler } from './middleware/error-handler.ts';
 import authRoutes from './features/auth/auth.routes.ts';
@@ -9,6 +9,9 @@ import pricingRoutes from './features/pricing/pricing.routes.ts';
 import historyRoutes from './features/history/history.routes.ts';
 import exportRoutes from './features/export/export.routes.ts';
 import profilesRoutes from './features/profiles/profiles.routes.ts';
+import settingsRoutes from './features/settings/settings.routes.ts';
+import purchasesRoutes from './features/purchases/purchases.routes.ts';
+import alertsRoutes from './features/alerts/alerts.routes.ts';
 
 export function createApp() {
   const app = express();
@@ -20,6 +23,9 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true }));
   app.use(sessionMiddleware);
 
+  // CSRF mitigation (Origin check on state-changing requests)
+  app.use(csrfGuard);
+
   // Rate limiting on API routes
   app.use('/api', apiLimiter);
 
@@ -30,6 +36,9 @@ export function createApp() {
   app.use('/api', pricingRoutes);
   app.use('/api', historyRoutes);
   app.use('/api', exportRoutes);
+  app.use('/api', settingsRoutes);
+  app.use('/api', purchasesRoutes);
+  app.use('/api', alertsRoutes);
 
   // API 404 for unmatched /api routes
   app.use('/api', (_req, res) => {

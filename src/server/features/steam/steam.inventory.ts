@@ -17,6 +17,9 @@ export interface StorageUnitFetchSummary {
   nonEmptyUnits: number;
   emptyUnits: number;
   loadedUnits: number;
+  // false when the GC was unreachable so caskets could NOT be enumerated
+  // (distinguishes "no storage units" from "couldn't check"). Anti-wipe relies on this.
+  enumerated: boolean;
 }
 
 export interface StorageUnitItemsResult {
@@ -27,6 +30,10 @@ export interface StorageUnitItemsResult {
 export interface InventoryFetchResult {
   items: InsertItem[];
   storageSummary: StorageUnitFetchSummary;
+  // Per-source success: used to refuse replacing a full inventory with a
+  // partial fetch (a transient Steam/GC error must not wipe items).
+  mainOk: boolean;
+  storageComplete: boolean;
 }
 
 interface GCInventoryItem {
@@ -56,32 +63,60 @@ function extractStorageUnitsFromInventory(inventory: GCInventoryItem[] | undefin
   return caskets;
 }
 
-export async function getStorageUnits(): Promise<CasketInfo[]> {
+export async function getStorageUnits(): Promise<{ caskets: CasketInfo[]; enumerated: boolean }> {
   const csgoClient = steamClient.csgoClient;
-  if (!csgoClient) return [];
+  if (!csgoClient) return { caskets: [], enumerated: false };
 
+  if (steamClient.isGamesPlayedSuppressed) {
+    // GC-less session (PC client holds the game): don't wait 60s for a GC that
+    // will never connect — report not-enumerated so the anti-wipe keeps old data.
+    logger.warn('[Inventory] GC-less session — skipping Storage Units enumeration.');
+    return { caskets: [], enumerated: false };
+  }
   if (!steamClient.isConnectedToGC) {
-    logger.info('[Inventory] Not connected to GC, waiting...');
-    const connected = await steamClient.waitForGC(5000);
+    // The GC handshake can take 10-60s after gamesPlayed(); the post-login refresh
+    // starts immediately, so give it a realistic budget instead of 5s — otherwise
+    // first fetches silently miss Storage Units and later ones abort on anti-wipe.
+    logger.info('[Inventory] Not connected to GC, waiting (up to 60s)...');
+    const connected = await steamClient.waitForGC(60000);
     if (!connected) {
-      logger.warn('[Inventory] GC connection timeout. Skipping Storage Units refresh.');
-      return [];
+      logger.warn('[Inventory] GC connection timeout — could NOT enumerate Storage Units.');
+      return { caskets: [], enumerated: false };
     }
   }
 
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Storage Units request timeout')), 30000);
+  // Never reject: on any GC error/timeout we resolve enumerated:false so the
+  // caller keeps the existing inventory instead of wiping Storage Units.
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (caskets: CasketInfo[], enumerated: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
+      resolve({ caskets, enumerated });
+    };
+    const timeout = setTimeout(() => {
+      logger.warn('[Inventory] Storage Units request timeout — could NOT enumerate.');
+      finish([], false);
+    }, 30000);
 
     try {
       const resolveFromInventory = (attempt = 0) => {
         const inventory = csgoClient.inventory as GCInventoryItem[] | undefined;
-        if ((inventory && inventory.length > 0) || attempt >= 6) {
+        if (inventory && inventory.length > 0) {
           const caskets = extractStorageUnitsFromInventory(inventory);
           logger.info(`[Inventory] Found ${caskets.length} Storage Units`);
-          resolve(caskets);
+          finish(caskets, true);
           return;
         }
-
+        if (attempt >= 15) {
+          // Cache still empty after ~6s: we cannot distinguish "account has no GC
+          // items" from "SO cache not delivered yet". Claiming enumerated:true here
+          // would let an existing inventory be replaced without its storage items.
+          logger.warn('[Inventory] GC inventory cache empty after retries — treating Storage Units as NOT enumerated.');
+          finish([], false);
+          return;
+        }
         // GC can deliver profile callback slightly before inventory cache is populated.
         setTimeout(() => resolveFromInventory(attempt + 1), 400);
       };
@@ -89,21 +124,16 @@ export async function getStorageUnits(): Promise<CasketInfo[]> {
       csgoClient.requestPlayersProfile(
         steamClient.steamUser!.steamID!,
         (...args: unknown[]) => {
-          clearTimeout(timeout);
-
-          // Some globaloffensive versions send (profile) instead of (err, profile).
-          const firstArg = args[0];
-          if (firstArg instanceof Error) {
-            reject(firstArg);
+          if (args[0] instanceof Error) {
+            logger.warn('[Inventory] GC profile error — could NOT enumerate Storage Units.');
+            finish([], false);
             return;
           }
-
           resolveFromInventory();
         },
       );
-    } catch (err) {
-      clearTimeout(timeout);
-      reject(err);
+    } catch {
+      finish([], false);
     }
   });
 }
@@ -157,7 +187,7 @@ function sleep(ms: number) {
 }
 
 export async function getAllStorageUnitItems(): Promise<StorageUnitItemsResult> {
-  const caskets = await getStorageUnits();
+  const { caskets, enumerated } = await getStorageUnits();
   const allItems: InsertItem[] = [];
   let loadedUnits = 0;
 
@@ -200,24 +230,25 @@ export async function getAllStorageUnitItems(): Promise<StorageUnitItemsResult> 
       nonEmptyUnits: nonEmpty.length,
       emptyUnits: skipped,
       loadedUnits,
+      enumerated,
     },
   };
 }
 
-export async function getMainInventory(): Promise<InsertItem[]> {
+export async function getMainInventory(): Promise<{ items: InsertItem[]; ok: boolean }> {
   const community = steamClient.community as SteamCommunity | null;
   const steamId = steamClient.steamUser?.steamID;
 
   if (!steamId || !community) {
     logger.warn('[Inventory] No Steam ID available for main inventory');
-    return [];
+    return { items: [], ok: false };
   }
 
-  return new Promise((resolve) => {
+  return new Promise<{ items: InsertItem[]; ok: boolean }>((resolve) => {
     community.getUserInventoryContents(steamId, 730, 2, true, (err: Error | null, inventory: Array<{ market_hash_name: string; assetid: string; icon_url: string }>) => {
       if (err) {
         logger.error('[Inventory] Main inventory error:', err.message);
-        resolve([]);
+        resolve({ items: [], ok: false });
         return;
       }
 
@@ -239,13 +270,13 @@ export async function getMainInventory(): Promise<InsertItem[]> {
       });
 
       logger.info(`[Inventory] Main inventory: ${items.length} items (${iconCache.size} icons cached)`);
-      resolve(items);
+      resolve({ items, ok: true });
     });
   });
 }
 
 export async function getAllInventory(): Promise<InventoryFetchResult> {
-  const mainItems = await getMainInventory();
+  const main = await getMainInventory();
   const storageResult = await getAllStorageUnitItems();
   const storageItems = storageResult.items;
 
@@ -258,7 +289,7 @@ export async function getAllInventory(): Promise<InventoryFetchResult> {
   const allItems: InsertItem[] = [...storageItems];
   const existingAssetIds = new Set(storageItems.map((i) => i.assetId).filter(Boolean));
 
-  for (const item of mainItems) {
+  for (const item of main.items) {
     if (!item.assetId || !existingAssetIds.has(item.assetId)) {
       allItems.push(item);
     }
@@ -267,5 +298,9 @@ export async function getAllInventory(): Promise<InventoryFetchResult> {
   return {
     items: allItems,
     storageSummary: storageResult.summary,
+    mainOk: main.ok,
+    storageComplete:
+      storageResult.summary.enumerated &&
+      storageResult.summary.loadedUnits === storageResult.summary.nonEmptyUnits,
   };
 }

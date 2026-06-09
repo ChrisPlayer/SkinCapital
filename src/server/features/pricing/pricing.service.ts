@@ -1,11 +1,12 @@
 import axios from 'axios';
-import { csfloatQueue } from './pricing.queue.ts';
+import { csfloatQueue, steamQueue } from './pricing.queue.ts';
 import {
   acquireSteamProxyWorker,
   ensureSteamProxyPool,
+  getPricingMode,
   getSteamCooldownRemainingMs,
   getSteamProxyPoolStats,
-  getSteamProxyConfig,
+  getSteamProxyAgent,
   markSteamDirectWorkersRateLimited,
   markSteamWorkerNetworkFailure,
   markSteamWorkerProxyRejected,
@@ -14,11 +15,14 @@ import {
   releaseSteamProxyWorker,
   type SteamProxyWorker,
 } from './steam.proxy-pool.ts';
+
+export { getPricingMode } from './steam.proxy-pool.ts';
 import { insertPrice, getCachedPriceRows } from '../../db/queries/prices.ts';
+import { getActiveAlertsByName, markTriggered } from '../../db/queries/alerts.ts';
 import { logger } from '../../lib/logger.ts';
 import type { Price } from '../../../shared/types/inventory.ts';
 
-export type PriceSource = 'steam' | 'csfloat';
+export type PriceSource = 'steam' | 'csfloat' | 'skinport';
 export type PriceFetchReason = 'fresh' | 'no_price' | 'no_worker' | 'rate_limited' | 'exhausted' | 'error';
 type SourceTimestamps = Record<PriceSource, string | null>;
 type CachedPriceState = Price & { sourceTimestamps: SourceTimestamps };
@@ -65,6 +69,66 @@ const CSFLOAT_RATE_LIMIT_MAX_COOLDOWN_MS = Math.max(
   parseInt(process.env.CSFLOAT_RATE_LIMIT_MAX_COOLDOWN_MS || '300000', 10),
 );
 const CSFLOAT_FORBIDDEN_COOLDOWN_MS = parseInt(process.env.CSFLOAT_FORBIDDEN_COOLDOWN_MS || '300000', 10);
+const SKINPORT_TTL_MS = Math.max(60000, parseInt(process.env.SKINPORT_TTL_MS || '600000', 10));
+
+// Skinport returns the whole CS2 price list in ONE request → cache it and serve
+// per-item lookups from memory (no per-item HTTP, no rate-limit).
+let skinportCache: { map: Map<string, number>; ts: number } = { map: new Map(), ts: 0 };
+// Stampede guard: concurrent callers share one in-flight bulk download, and a
+// failed/empty fetch backs off (negative TTL) instead of being re-hit per item.
+let skinportInFlight: Promise<Map<string, number>> | null = null;
+let skinportFailedAt = 0;
+const SKINPORT_NEGATIVE_TTL_MS = Math.max(15000, parseInt(process.env.SKINPORT_NEGATIVE_TTL_MS || '60000', 10));
+
+async function getSkinportMap(): Promise<Map<string, number>> {
+  if (skinportCache.map.size > 0 && Date.now() - skinportCache.ts < SKINPORT_TTL_MS) {
+    return skinportCache.map;
+  }
+  if (Date.now() - skinportFailedAt < SKINPORT_NEGATIVE_TTL_MS) {
+    return skinportCache.map; // recent failure → serve stale/empty without re-hitting
+  }
+  if (skinportInFlight) {
+    return skinportInFlight;
+  }
+  skinportInFlight = (async () => {
+    try {
+      const res = await axios.get('https://api.skinport.com/v1/items', {
+        params: { app_id: 730, currency: 'EUR' },
+        timeout: 25000,
+        headers: { 'Accept-Encoding': 'br', Accept: 'application/json' },
+      });
+      const map = new Map<string, number>();
+      const rows = (res.data as Array<{ market_hash_name?: string; suggested_price?: number | null; median_price?: number | null; min_price?: number | null }>) || [];
+      for (const it of rows) {
+        const price = it.suggested_price ?? it.median_price ?? it.min_price;
+        if (it.market_hash_name && typeof price === 'number' && price > 0) {
+          map.set(it.market_hash_name, round2(price));
+        }
+      }
+      if (map.size > 0) {
+        skinportCache = { map, ts: Date.now() };
+        skinportFailedAt = 0;
+        logger.info(`[Price] Skinport bulk loaded: ${map.size} items`);
+      } else {
+        skinportFailedAt = Date.now();
+        logger.warn('[Price] Skinport bulk returned no items, backing off');
+      }
+      return skinportCache.map;
+    } catch (err) {
+      skinportFailedAt = Date.now();
+      logger.warn('[Price] Skinport bulk failed:', (err as Error).message);
+      return skinportCache.map; // may be empty
+    } finally {
+      skinportInFlight = null;
+    }
+  })();
+  return skinportInFlight;
+}
+
+async function getSkinportPrice(marketHashName: string): Promise<number | null> {
+  const map = await getSkinportMap();
+  return map.get(marketHashName) ?? null;
+}
 
 let steamOverviewFallbackNoticeUntil = 0;
 let steamNoWorkerLogWindowUntil = 0;
@@ -197,7 +261,8 @@ async function getSteamMarketPriceFromRender(
   const url = `https://steamcommunity.com/market/listings/730/${encodeURIComponent(marketHashName)}/render/`;
   const response = await axios.get(url, {
     timeout: 15000,
-    proxy: getSteamProxyConfig(worker),
+    httpsAgent: getSteamProxyAgent(worker),
+    proxy: false,
     headers: {
       Accept: 'application/json',
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -220,7 +285,69 @@ async function getSteamMarketPriceFromRender(
   return price;
 }
 
+/**
+ * Direct mode (no proxy): one request at a time through steamQueue (spaced so
+ * Steam is never rate-limited). Tries priceoverview (lowest_price, else
+ * median_price for low-volume items) then the listings render fallback.
+ */
+async function getSteamPriceDirectDetailed(marketHashName: string): Promise<SteamFetchResult> {
+  const headers = {
+    Accept: 'application/json',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+  };
+
+  const result = await steamQueue.add(async (): Promise<SteamFetchResult> => {
+    // 1) priceoverview
+    try {
+      const url = `https://steamcommunity.com/market/priceoverview/?appid=730&market_hash_name=${encodeURIComponent(marketHashName)}&currency=3`;
+      const response = await axios.get(url, { timeout: 15000, proxy: false, headers });
+      const overviewRaw = response.data?.lowest_price || response.data?.median_price;
+      if (response.data?.success && overviewRaw) {
+        const price = parseSteamPrice(overviewRaw);
+        logger.debug(`[Price] Steam(direct): ${marketHashName} = €${price.toFixed(2)}`);
+        return { price, reason: 'fresh', cooldownMs: 0 };
+      }
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 429) {
+        logger.warn(`[Price] Steam(direct) 429 on ${marketHashName}; backing off ${(STEAM_RATE_LIMIT_COOLDOWN_MS / 1000).toFixed(0)}s.`);
+        await sleep(STEAM_RATE_LIMIT_COOLDOWN_MS);
+        return { price: null, reason: 'rate_limited', cooldownMs: STEAM_RATE_LIMIT_COOLDOWN_MS };
+      }
+    }
+
+    // 2) listings render fallback
+    try {
+      const url = `https://steamcommunity.com/market/listings/730/${encodeURIComponent(marketHashName)}/render/`;
+      const response = await axios.get(url, {
+        timeout: 15000,
+        proxy: false,
+        headers,
+        params: { query: '', start: 0, count: 20, currency: 3, language: 'english' },
+      });
+      const price = parseSteamRenderPrice(response.data);
+      if (price !== null) {
+        logger.debug(`[Price] Steam(direct render): ${marketHashName} = €${price.toFixed(2)}`);
+        return { price, reason: 'fresh', cooldownMs: 0 };
+      }
+    } catch (err: unknown) {
+      const status = (err as { response?: { status?: number } }).response?.status;
+      if (status === 429) {
+        await sleep(STEAM_RATE_LIMIT_COOLDOWN_MS);
+        return { price: null, reason: 'rate_limited', cooldownMs: STEAM_RATE_LIMIT_COOLDOWN_MS };
+      }
+    }
+
+    return { price: null, reason: 'no_price', cooldownMs: 0 };
+  });
+
+  return result as SteamFetchResult;
+}
+
 async function getSteamMarketPriceDetailed(marketHashName: string): Promise<SteamFetchResult> {
+  if (getPricingMode() === 'direct') {
+    return getSteamPriceDirectDetailed(marketHashName);
+  }
   await ensureSteamProxyPool();
   let sawRateLimit = false;
   let sawHardError = false;
@@ -258,15 +385,17 @@ async function getSteamMarketPriceDetailed(marketHashName: string): Promise<Stea
 
           const response = await axios.get(url, {
             timeout: 15000,
-            proxy: getSteamProxyConfig(worker),
+            httpsAgent: getSteamProxyAgent(worker),
+            proxy: false,
             headers: {
               Accept: 'application/json',
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             },
           });
 
-          if (response.data?.success && response.data?.lowest_price) {
-            const price = parseSteamPrice(response.data.lowest_price);
+          const overviewRaw = response.data?.lowest_price || response.data?.median_price;
+          if (response.data?.success && overviewRaw) {
+            const price = parseSteamPrice(overviewRaw);
             markSteamWorkerSuccess(worker);
             logger.debug(`[Price] Steam(${worker.id}): ${marketHashName} = \u20ac${price.toFixed(2)}`);
             return {
@@ -276,7 +405,7 @@ async function getSteamMarketPriceDetailed(marketHashName: string): Promise<Stea
             };
           }
           logger.debug(
-            `[Price] Steam overview(${worker.id}): no data for ${marketHashName} (success=${response.data?.success}, has_price=${!!response.data?.lowest_price})`,
+            `[Price] Steam overview(${worker.id}): no data for ${marketHashName} (success=${response.data?.success}, has_price=${!!overviewRaw})`,
           );
         }
       } catch (err: unknown) {
@@ -554,9 +683,10 @@ function getCachedPriceState(marketHashName: string): CachedPriceState {
   const prices: CachedPriceState = {
     steam: null,
     csfloat: null,
+    skinport: null,
     average: null,
     timestamp: null,
-    sourceTimestamps: { steam: null, csfloat: null },
+    sourceTimestamps: { steam: null, csfloat: null, skinport: null },
   };
 
   const rows = getCachedPriceRows(marketHashName);
@@ -572,9 +702,13 @@ function getCachedPriceState(marketHashName: string): CachedPriceState {
       prices.csfloat = row.price_eur;
       prices.sourceTimestamps.csfloat = row.timestamp;
     }
+    if (row.source === 'skinport' && prices.skinport === null) {
+      prices.skinport = row.price_eur;
+      prices.sourceTimestamps.skinport = row.timestamp;
+    }
   }
 
-  prices.average = prices.steam ?? prices.csfloat;
+  prices.average = prices.steam ?? prices.csfloat ?? prices.skinport;
   return prices;
 }
 
@@ -583,18 +717,43 @@ export function getCachedPrices(marketHashName: string): Price {
   return {
     steam: cached.steam,
     csfloat: cached.csfloat,
+    skinport: cached.skinport,
     average: cached.average,
     timestamp: cached.timestamp,
   };
 }
 
+/**
+ * Custom price-threshold alerts: when a FRESH steam price is persisted, mark
+ * every active alert for that item whose threshold the price crosses.
+ */
+function checkPriceAlerts(marketHashName: string, freshPrice: number) {
+  const alerts = getActiveAlertsByName(marketHashName);
+  for (const alert of alerts) {
+    const crossed =
+      (alert.direction === 'below' && freshPrice <= alert.threshold_eur) ||
+      (alert.direction === 'above' && freshPrice >= alert.threshold_eur);
+    if (crossed) {
+      markTriggered(alert.id);
+      logger.info(
+        `[Price] Custom alert #${alert.id} triggered: ${marketHashName} ${alert.direction} €${alert.threshold_eur.toFixed(2)} (fresh €${freshPrice.toFixed(2)})`,
+      );
+    }
+  }
+}
+
 function getPriceForSource(prices: Price, source: PriceSource): number | null {
-  return source === 'csfloat' ? prices.csfloat : prices.steam;
+  if (source === 'csfloat') return prices.csfloat;
+  if (source === 'skinport') return prices.skinport;
+  return prices.steam;
 }
 
 async function fetchPriceBySource(marketHashName: string, source: PriceSource): Promise<number | null> {
   if (source === 'csfloat') {
     return getCsfloatMarketPriceDedup(marketHashName);
+  }
+  if (source === 'skinport') {
+    return getSkinportPrice(marketHashName);
   }
   return getSteamMarketPriceDedup(marketHashName);
 }
@@ -611,6 +770,11 @@ async function fetchPriceBySourceDetailed(
       reason: price !== null ? 'fresh' : 'no_price',
       cooldownMs,
     };
+  }
+
+  if (source === 'skinport') {
+    const price = await getSkinportPrice(marketHashName);
+    return { price, reason: price !== null ? 'fresh' : 'no_price', cooldownMs: 0 };
   }
 
   const steam = await getSteamMarketPriceDedupDetailed(marketHashName);
@@ -633,6 +797,9 @@ export async function refreshPriceWithoutStaleFallback(
   const fetched = await fetchPriceBySourceDetailed(marketHashName, source);
   if (fetched.price !== null) {
     insertPrice(marketHashName, source, fetched.price);
+    if (source === 'steam') {
+      checkPriceAlerts(marketHashName, fetched.price);
+    }
     return {
       freshPrice: fetched.price,
       stalePrice: staleSourcePrice,
@@ -652,6 +819,9 @@ export async function refreshPriceWithoutStaleFallback(
 export function getSourceCooldownRemainingMs(source: PriceSource): number {
   if (source === 'steam') {
     return getSteamCooldownRemainingMs();
+  }
+  if (source === 'skinport') {
+    return 0; // bulk-cached, no per-item rate limit
   }
 
   const now = Date.now();
@@ -695,10 +865,14 @@ export async function getPrices(
   const freshPrice = await fetchPriceBySource(marketHashName, source);
   if (freshPrice !== null) {
     insertPrice(marketHashName, source, freshPrice);
+    if (source === 'steam') {
+      checkPriceAlerts(marketHashName, freshPrice);
+    }
     return {
       ...cached,
       steam: source === 'steam' ? freshPrice : cached.steam,
       csfloat: source === 'csfloat' ? freshPrice : cached.csfloat,
+      skinport: source === 'skinport' ? freshPrice : cached.skinport,
       average: freshPrice,
       timestamp: null,
     };

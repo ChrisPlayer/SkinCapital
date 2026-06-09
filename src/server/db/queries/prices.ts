@@ -55,11 +55,15 @@ export function insertPrice(marketHashName: string, source: string, priceEur: nu
 
 export function getCachedPriceRows(marketHashName: string): PriceRow[] {
   const sqlite = getSqlite();
+  // Latest row PER source (so all of steam/csfloat/skinport are captured).
   return sqlite
     .prepare(
-      `SELECT source, price_eur, timestamp FROM prices
-       WHERE market_hash_name = ?
-       ORDER BY timestamp DESC LIMIT 5`,
+      `SELECT source, price_eur, timestamp FROM (
+         SELECT source, price_eur, timestamp,
+                ROW_NUMBER() OVER (PARTITION BY source ORDER BY timestamp DESC) AS rn
+         FROM prices
+         WHERE market_hash_name = ?
+       ) WHERE rn = 1`,
     )
     .all(marketHashName) as PriceRow[];
 }
@@ -142,15 +146,53 @@ export function getLatestPriceWindowBySource(source: string): { from: string; to
   return { from: row.from_ts, to: row.to_ts };
 }
 
-export function getOldAveragePrice(marketHashName: string): number | null {
+export interface MoverRow {
+  name: string;
+  oldPrice: number;
+  newPrice: number;
+}
+
+/**
+ * For each distinct item of a profile, compare the LATEST vs the OLDEST price
+ * within the window (same source, non-null prices). Items with a single point
+ * in the window are excluded (rn_desc > 1 means the oldest row isn't also the
+ * newest). Powers the dashboard "Top movers" card.
+ */
+export function getPriceMovers(steamId: string, source: string, days: number): MoverRow[] {
   const sqlite = getSqlite();
+  return sqlite
+    .prepare(
+      `WITH windowed AS (
+         SELECT p.market_hash_name, p.price_eur,
+                ROW_NUMBER() OVER (PARTITION BY p.market_hash_name ORDER BY p.timestamp ASC, p.id ASC) AS rn_asc,
+                ROW_NUMBER() OVER (PARTITION BY p.market_hash_name ORDER BY p.timestamp DESC, p.id DESC) AS rn_desc
+         FROM prices p
+         WHERE p.source = ?
+           AND p.price_eur IS NOT NULL
+           AND p.timestamp > datetime('now', '-' || ? || ' days')
+           AND p.market_hash_name IN (SELECT DISTINCT market_hash_name FROM items WHERE steam_id = ?)
+       )
+       SELECT o.market_hash_name AS name, o.price_eur AS oldPrice, n.price_eur AS newPrice
+       FROM windowed o
+       INNER JOIN windowed n
+         ON n.market_hash_name = o.market_hash_name AND n.rn_desc = 1
+       WHERE o.rn_asc = 1 AND o.rn_desc > 1`,
+    )
+    .all(source, days.toString(), steamId) as MoverRow[];
+}
+
+export function getOldAveragePrice(marketHashName: string, source = 'steam'): number | null {
+  const sqlite = getSqlite();
+  // Source-filtered: averaging across steam/csfloat/skinport rows would compare
+  // the current single-source price against a mixed-basis average.
   const row = sqlite
     .prepare(
       `SELECT AVG(price_eur) as avg_price FROM prices
        WHERE market_hash_name = ?
+       AND source = ?
        AND timestamp < datetime('now', '-20 hours')
        AND timestamp > datetime('now', '-48 hours')`,
     )
-    .get(marketHashName) as { avg_price: number | null } | undefined;
+    .get(marketHashName, source) as { avg_price: number | null } | undefined;
   return row?.avg_price ?? null;
 }

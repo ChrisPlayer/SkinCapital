@@ -3,18 +3,18 @@ import { getOldAveragePrice } from '../../db/queries/prices.ts';
 import { logger } from '../../lib/logger.ts';
 import type { ChangeInfo, HistoryPoint } from '../../../shared/types/api.ts';
 
-export function saveSnapshot(steamId: string, totalValue: number, itemCount: number) {
+export function saveSnapshot(steamId: string, totalValue: number, itemCount: number, source = 'steam') {
   try {
-    historyQueries.saveSnapshot(steamId, totalValue, itemCount);
-    logger.info(`[History] Saved snapshot for ${steamId}: \u20ac${totalValue.toFixed(2)}, ${itemCount} items`);
+    historyQueries.saveSnapshot(steamId, totalValue, itemCount, source);
+    logger.info(`[History] Saved ${source} snapshot for ${steamId}: \u20ac${totalValue.toFixed(2)}, ${itemCount} items`);
   } catch (err) {
     logger.error('[History] Failed to save snapshot:', (err as Error).message);
   }
 }
 
-export function getHistory(steamId: string, days: number = 30): HistoryPoint[] {
+export function getHistory(steamId: string, days: number = 30, source = 'steam'): HistoryPoint[] {
   try {
-    const records = historyQueries.getHistory(steamId, days);
+    const records = historyQueries.getHistory(steamId, days, source);
     return records.map((r) => ({
       date: r.timestamp,
       value: r.total_value,
@@ -26,9 +26,9 @@ export function getHistory(steamId: string, days: number = 30): HistoryPoint[] {
   }
 }
 
-export function get24hChange(steamId: string, currentValue: number): ChangeInfo {
+export function get24hChange(steamId: string, currentValue: number, source = 'steam'): ChangeInfo {
   try {
-    const yesterday = historyQueries.getYesterdayValue(steamId);
+    const yesterday = historyQueries.getYesterdayValue(steamId, source);
 
     if (!yesterday) {
       return { change: 0, percentage: 0, hasData: false };
@@ -53,11 +53,12 @@ export function get24hChange(steamId: string, currentValue: number): ChangeInfo 
 export function getItem24hChange(
   marketHashName: string,
   currentPrice: number,
+  source = 'steam',
 ): ChangeInfo {
   try {
-    const oldPrice = getOldAveragePrice(marketHashName);
+    const oldPrice = getOldAveragePrice(marketHashName, source);
 
-    if (oldPrice !== null) {
+    if (oldPrice !== null && oldPrice > 0) {
       const change = currentPrice - oldPrice;
       const percentage = (change / oldPrice) * 100;
       return { change, percentage, hasData: true };

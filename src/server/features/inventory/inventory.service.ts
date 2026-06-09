@@ -11,8 +11,14 @@ import {
   type PriceSource,
 } from '../pricing/pricing.service.ts';
 import * as historyService from '../history/history.service.ts';
-import { insertItemsBatch, clearItemsByProfile, getItemsByProfile } from '../../db/queries/items.ts';
+import {
+  replaceProfileItems,
+  replaceMainInventoryItems,
+  countItemsByProfile,
+  getItemsByProfile,
+} from '../../db/queries/items.ts';
 import { updateProfileSummary } from '../../db/queries/profiles.ts';
+import { getPurchasesByProfile } from '../../db/queries/purchases.ts';
 import {
   getAllLatestPricesBySource,
   getAllPreviousPricesBySource,
@@ -23,7 +29,7 @@ import { getRarityForName } from '../steam/steam.schema.ts';
 import { getWearFromMarketHashName, getWearLevel } from '../../../shared/constants/wear.ts';
 import { logger } from '../../lib/logger.ts';
 import type { ItemGroup, StorageUnit, Sticker } from '../../../shared/types/inventory.ts';
-import type { DashboardData, DailyHistoryEntry } from '../../../shared/types/api.ts';
+import type { ChangeInfo, DashboardData, DailyHistoryEntry } from '../../../shared/types/api.ts';
 import type { StorageUnitFetchSummary } from '../steam/steam.inventory.ts';
 
 export type PriceRefreshScope = 'all' | 'stale_or_missing' | 'missing';
@@ -46,7 +52,7 @@ const activePriceRefreshes = new Map<string, PriceRefreshTaskState>();
 const storageSummaryBySteamId = new Map<string, StorageUnitFetchSummary>();
 const priceRefreshProgressBySteamId = new Map<string, PriceRefreshProgressState>();
 const lastInventoryRefreshBySteamId = new Map<string, Date>();
-const lastPriceRefreshBySteamId = new Map<string, { steam: Date | null; csfloat: Date | null }>();
+const lastPriceRefreshBySteamId = new Map<string, Partial<Record<PriceSource, Date | null>>>();
 const missingPriceChecksByProfileSource = new Map<string, Map<string, number>>();
 const noFreshPriceChecksByProfileSource = new Map<string, Map<string, number>>();
 const staleRefreshCursorByProfileSource = new Map<string, number>();
@@ -90,7 +96,7 @@ function sleep(ms: number) {
 }
 
 function markPriceRefreshCompleted(steamId: string, source: PriceSource, at: Date) {
-  const current = lastPriceRefreshBySteamId.get(steamId) ?? { steam: null, csfloat: null };
+  const current = lastPriceRefreshBySteamId.get(steamId) ?? {};
   current[source] = at;
   lastPriceRefreshBySteamId.set(steamId, current);
 }
@@ -219,7 +225,7 @@ export function getLastRefresh(steamId?: string, source?: PriceSource) {
     if (source) {
       const bySource = lastPriceRefreshBySteamId.get(steamId)?.[source] ?? null;
       if (bySource) return bySource;
-      if (source === 'csfloat') return null;
+      if (source === 'csfloat' || source === 'skinport') return null;
     }
     return lastInventoryRefreshBySteamId.get(steamId) ?? null;
   }
@@ -275,7 +281,7 @@ export function getPriceRefreshProgress(steamId?: string) {
   return { fetched: first.value.fetched, total: first.value.total };
 }
 
-export async function refresh(steamId: string) {
+export async function refresh(steamId: string, force = false) {
   if (isRefreshing) {
     logger.info('[Inventory] Refresh already in progress, skipping');
     return { skipped: true };
@@ -294,8 +300,37 @@ export async function refresh(steamId: string) {
     const items = inventoryResult.items;
     storageSummaryBySteamId.set(steamId, inventoryResult.storageSummary);
 
-    clearItemsByProfile(steamId);
-    insertItemsBatch(items, steamId);
+    // Anti-wipe guard: a transient Steam/GC error can return 0 items OR a
+    // failed main fetch. Never replace a non-empty inventory with an empty
+    // fetch or one whose main inventory errored — keep the existing data
+    // unless the caller explicitly forces the replace.
+    const previousCount = countItemsByProfile(steamId);
+    if (!force && previousCount > 0 && (items.length === 0 || !inventoryResult.mainOk)) {
+      steamClient.logout();
+      const detail =
+        items.length === 0
+          ? 'fetch returned 0 items'
+          : `incomplete fetch (main ok=${inventoryResult.mainOk}, storage ${inventoryResult.storageSummary.loadedUnits}/${inventoryResult.storageSummary.nonEmptyUnits} units)`;
+      logger.warn(
+        `[Inventory] Aborting replace for ${steamId}: ${detail}; keeping existing ${previousCount} items. Re-run with force to override.`,
+      );
+      return { success: false, error: 'fetch_incomplete', kept: previousCount, detail };
+    }
+    if (!force && previousCount > 0 && !inventoryResult.storageComplete) {
+      // Main inventory is fresh but storage units could not be (fully) read —
+      // typically the GC-less rescue login. Replace only the main rows and
+      // keep the stored storage-unit contents instead of aborting everything.
+      logger.warn(
+        `[Inventory] Partial refresh for ${steamId}: main inventory replaced, storage units kept (GC unavailable — storage ${inventoryResult.storageSummary.loadedUnits}/${inventoryResult.storageSummary.nonEmptyUnits} units).`,
+      );
+      replaceMainInventoryItems(items.filter((i) => !i.casketId), steamId);
+    } else {
+      // Atomic: delete + insert in one transaction (no partial-failure wipe).
+      replaceProfileItems(items, steamId);
+    }
+    // After a partial refresh the DB also keeps the old storage rows, so count
+    // what was actually persisted instead of trusting the fetched list.
+    const persistedCount = countItemsByProfile(steamId);
 
     // Disconnect Steam as soon as inventory extraction is done.
     // Price fetching uses Steam Market HTTP and does not need an active Steam session.
@@ -330,15 +365,20 @@ export async function refresh(steamId: string) {
       }
     });
 
+    // Recompute from the cache so the snapshot includes sticker values \u2014 the
+    // same basis as the dashboard total it will be compared against.
+    const finalTotal = computeSourceTotal(getItemsByProfile(steamId), 'steam');
+    totalValue = finalTotal.totalValue;
+
     const changeInfo = historyService.get24hChange(steamId, totalValue);
 
     if (changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2) {
       logger.warn(`[History] SKIPPING SNAPSHOT: Calculated value \u20ac${totalValue.toFixed(2)} is suspiciously low compared to yesterday (\u20ac${changeInfo.yesterdayValue.toFixed(2)}). Preserving history.`);
     } else {
-      historyService.saveSnapshot(steamId, totalValue, items.length);
+      historyService.saveSnapshot(steamId, totalValue, persistedCount);
     }
 
-    updateProfileSummary(steamId, items.length, totalValue);
+    updateProfileSummary(steamId, persistedCount, totalValue);
 
     const completedAt = new Date();
     lastInventoryRefreshBySteamId.set(steamId, completedAt);
@@ -346,7 +386,7 @@ export async function refresh(steamId: string) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     logger.info(`[Inventory] Refresh complete in ${duration}s. Total value: \u20ac${totalValue.toFixed(2)}`);
 
-    return { success: true, itemCount: items.length, totalValue, duration: parseFloat(duration) };
+    return { success: true, itemCount: persistedCount, totalValue, duration: parseFloat(duration) };
   } catch (err) {
     logger.error('[Inventory] Refresh failed:', err);
     return { success: false, error: (err as Error).message };
@@ -441,11 +481,20 @@ function groupItems(
       stickerValue,
       priceChange,
       priceChangePercent,
+      buyPrice: null,
     });
   }
 
   result.sort((a, b) => b.total - a.total);
   return result;
+}
+
+/** Decorate grouped items with the profile's purchase prices (P&L basis). */
+function applyBuyPrices(groups: ItemGroup[], purchases: Map<string, number>) {
+  if (purchases.size === 0) return;
+  for (const group of groups) {
+    group.buyPrice = purchases.get(group.marketHashName) ?? null;
+  }
 }
 
 function parseStickers(stickersJson: string | null): Sticker[] | null {
@@ -507,6 +556,36 @@ function getNamesToRefresh(
   });
 }
 
+/**
+ * Source total from the latest cached prices, STICKER VALUES INCLUDED — the
+ * same basis as the dashboard total, so history snapshots and the 24h change
+ * compare like with like.
+ */
+function computeSourceTotal(
+  rawItems: ReturnType<typeof getItemsByProfile>,
+  source: PriceSource,
+): { totalValue: number; pricedItems: number } {
+  const latest = getAllLatestPricesBySource(source);
+  const priceMap = new Map(latest.map((p) => [p.market_hash_name, p.price_eur]));
+  let totalValue = 0;
+  let pricedItems = 0;
+  for (const item of rawItems) {
+    const price = priceMap.get(item.marketHashName);
+    if (price !== null && price !== undefined) {
+      totalValue += price;
+      pricedItems += 1;
+    }
+    const stickers = parseStickers(item.stickers);
+    if (stickers) {
+      for (const s of stickers) {
+        const sp = priceMap.get(s.name);
+        if (sp !== null && sp !== undefined) totalValue += sp;
+      }
+    }
+  }
+  return { totalValue, pricedItems };
+}
+
 export function getDashboardData(
   steamId: string,
   days: number = 30,
@@ -529,7 +608,10 @@ export function getDashboardData(
       for (const s of stickers) {
         if (!priceMap.has(s.name)) {
           const cached = getCachedPrices(s.name);
-          priceMap.set(s.name, priceSource === 'csfloat' ? cached.csfloat : cached.steam);
+          priceMap.set(
+            s.name,
+            priceSource === 'csfloat' ? cached.csfloat : priceSource === 'skinport' ? cached.skinport : cached.steam,
+          );
         }
       }
     }
@@ -538,23 +620,28 @@ export function getDashboardData(
   // Previous prices for change detection
   const previousPriceMap = getAllPreviousPricesBySource(priceSource);
 
+  // Purchase prices (per profile) for the P&L computation
+  const purchases = getPurchasesByProfile(steamId);
+
   // All items grouped
   const allGrouped = groupItems(rawItems, priceMap, previousPriceMap);
+  applyBuyPrices(allGrouped, purchases);
   const totalValue = allGrouped.reduce((sum, g) => sum + g.total, 0);
-  const missingPrices = allGrouped.reduce(
-    (acc, group) => {
-      if (group.price === null) {
-        acc.uniqueCount += 1;
-        acc.itemCount += group.quantity;
-      }
-      return acc;
-    },
-    { itemCount: 0, uniqueCount: 0 },
-  );
+
+  // Invested / P&L over groups that have a purchase price (null when none do).
+  let invested: number | null = null;
+  let pnl: number | null = null;
+  for (const group of allGrouped) {
+    if (group.buyPrice === null) continue;
+    const cost = group.buyPrice * group.quantity;
+    invested = (invested ?? 0) + cost;
+    pnl = (pnl ?? 0) + (group.total - cost);
+  }
 
   // Main inventory
   const mainRaw = rawItems.filter((i) => !i.casketId);
   const mainGrouped = groupItems(mainRaw, priceMap, previousPriceMap);
+  applyBuyPrices(mainGrouped, purchases);
   const mainTotal = mainGrouped.reduce((sum, g) => sum + g.total, 0);
 
   // Storage units
@@ -576,6 +663,7 @@ export function getDashboardData(
 
   for (const [casketId, casketItems] of casketItemsMap) {
     const casketGrouped = groupItems(casketItems, priceMap, previousPriceMap);
+    applyBuyPrices(casketGrouped, purchases);
     const casketTotal = casketGrouped.reduce((sum, g) => sum + g.total, 0);
 
     // Find the storage unit item itself to get its image
@@ -595,8 +683,8 @@ export function getDashboardData(
   }
   storageUnits.sort((a, b) => b.totalValue - a.totalValue);
 
-  // History
-  const historyData = historyService.getHistory(steamId, days);
+  // History (per selected source — each source has its own snapshot line)
+  const historyData = historyService.getHistory(steamId, days, priceSource);
   const dailyHistory: DailyHistoryEntry[] = historyData
     .map((day, index) => {
       let change = 0;
@@ -610,7 +698,9 @@ export function getDashboardData(
     })
     .reverse();
 
-  const change24h = historyService.get24hChange(steamId, totalValue);
+  // Snapshots are per-source, so the 24h change is meaningful for every source
+  // (hasData stays false until that source has a yesterday snapshot).
+  const change24h: ChangeInfo = historyService.get24hChange(steamId, totalValue, priceSource);
   const priceWindow = getLatestPriceWindowBySource(priceSource);
 
   return {
@@ -621,7 +711,8 @@ export function getDashboardData(
     totalItems: rawItems.length,
     uniqueItems: allGrouped.length,
     totalValue,
-    missingPrices,
+    invested,
+    pnl,
     change24h,
     historyData,
     dailyHistory,
@@ -703,6 +794,15 @@ export async function refreshPrices(
       const completedAt = new Date();
       markPriceRefreshCompleted(steamId, source, completedAt);
       lastRefresh = completedAt;
+      // Still record today's snapshot: right after midnight every price can be
+      // "fresh enough", which would otherwise leave a hole in the history line.
+      const cachedTotal = computeSourceTotal(rawItems, source);
+      if (cachedTotal.pricedItems > 0) {
+        const changeInfo = historyService.get24hChange(steamId, cachedTotal.totalValue, source);
+        if (!(changeInfo.hasData && changeInfo.yesterdayValue && cachedTotal.totalValue < changeInfo.yesterdayValue * 0.2)) {
+          historyService.saveSnapshot(steamId, cachedTotal.totalValue, rawItems.length, source);
+        }
+      }
       logger.info(`[Prices] ${source} refresh skipped: no items match scope ${scope} for ${steamId}`);
       return;
     }
@@ -979,16 +1079,11 @@ export async function refreshPrices(
       `[Prices] ${source} refresh outcome: ${foundCount} fresh, ${staleKeptCount} stale-kept, ${noPriceCount} no-price, ${retryScheduledCount} retries, ${workerCrashCount} worker crashes.`,
     );
 
-    // Recalculate total value for the selected source only
-    const updatedPrices = getAllLatestPricesBySource(source);
-    const updatedPriceMap = new Map(updatedPrices.map((p) => [p.market_hash_name, p.price_eur]));
-    for (const item of rawItems) {
-      const price = updatedPriceMap.get(item.marketHashName);
-      if (price !== null && price !== undefined) {
-        totalValue += price;
-        pricedItems += 1;
-      }
-    }
+    // Recalculate total value for the selected source only (sticker values
+    // included — same basis as the dashboard total the snapshot is compared to)
+    const recomputed = computeSourceTotal(rawItems, source);
+    totalValue = recomputed.totalValue;
+    pricedItems = recomputed.pricedItems;
 
     const completedAt = new Date();
     markPriceRefreshCompleted(steamId, source, completedAt);
@@ -1001,6 +1096,15 @@ export async function refreshPrices(
       return;
     }
 
+    // Per-source daily snapshot (steam/csfloat/skinport each get their own
+    // history line, so the 24h change works for every source).
+    const changeInfo = historyService.get24hChange(steamId, totalValue, source);
+    if (changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2) {
+      logger.warn(`[Prices] SKIPPING ${source} SNAPSHOT: value too low compared to yesterday`);
+    } else {
+      historyService.saveSnapshot(steamId, totalValue, rawItems.length, source);
+    }
+
     if (source !== 'steam') {
       logger.info(
         `[Prices] ${source} refresh complete (scope: ${scope}). Priced items: ${pricedItems}/${rawItems.length}. Total: €${totalValue.toFixed(2)}`,
@@ -1008,14 +1112,7 @@ export async function refreshPrices(
       return;
     }
 
-    const changeInfo = historyService.get24hChange(steamId, totalValue);
-
-    if (changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2) {
-      logger.warn(`[Prices] SKIPPING SNAPSHOT: value too low compared to yesterday`);
-    } else {
-      historyService.saveSnapshot(steamId, totalValue, rawItems.length);
-    }
-
+    // Profile summary (the profile-card total) stays steam-based.
     updateProfileSummary(steamId, rawItems.length, totalValue);
     lastRefresh = new Date();
     logger.info(`[Prices] ${source} refresh complete (scope: ${scope}). Total: €${totalValue.toFixed(2)}`);

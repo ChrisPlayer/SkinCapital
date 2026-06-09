@@ -24,7 +24,7 @@ export function upsertProfile(
       `INSERT INTO profiles (steam_id, username, persona_name, avatar_url)
        VALUES (?, ?, ?, ?)
        ON CONFLICT(steam_id) DO UPDATE SET
-         username = excluded.username,
+         username = COALESCE(NULLIF(excluded.username, 'Unknown'), profiles.username),
          persona_name = COALESCE(excluded.persona_name, profiles.persona_name),
          avatar_url = COALESCE(excluded.avatar_url, profiles.avatar_url)`,
     )
@@ -54,8 +54,9 @@ export function getAllProfiles(): ProfileRow[] {
            FROM prices p1
            INNER JOIN (
              SELECT market_hash_name, MAX(timestamp) as max_ts
-             FROM prices GROUP BY market_hash_name
+             FROM prices WHERE source = 'steam' GROUP BY market_hash_name
            ) p2 ON p1.market_hash_name = p2.market_hash_name AND p1.timestamp = p2.max_ts
+           WHERE p1.source = 'steam'
          ) lp ON lp.market_hash_name = i.market_hash_name
          GROUP BY i.steam_id
        ) s ON s.steam_id = p.steam_id
@@ -85,8 +86,9 @@ export function getProfileBySteamId(steamId: string): ProfileRow | undefined {
            FROM prices p1
            INNER JOIN (
              SELECT market_hash_name, MAX(timestamp) as max_ts
-             FROM prices GROUP BY market_hash_name
+             FROM prices WHERE source = 'steam' GROUP BY market_hash_name
            ) p2 ON p1.market_hash_name = p2.market_hash_name AND p1.timestamp = p2.max_ts
+           WHERE p1.source = 'steam'
          ) lp ON lp.market_hash_name = i.market_hash_name
          GROUP BY i.steam_id
        ) s ON s.steam_id = p.steam_id

@@ -124,11 +124,14 @@ declare module 'node-cron' {
   interface ScheduleOptions {
     scheduled?: boolean;
     timezone?: string;
+    // Registry key in getTasks() (defaults to a uuid when omitted).
+    name?: string;
   }
+  // node-cron 3.x has NO destroy(): a stopped task must be deleted from the
+  // getTasks() registry (keyed by options.name) or it leaks there forever.
   interface ScheduledTask {
     start(): void;
     stop(): void;
-    destroy(): void;
   }
   function schedule(
     expression: string,
@@ -136,6 +139,7 @@ declare module 'node-cron' {
     options?: ScheduleOptions,
   ): ScheduledTask;
   function validate(expression: string): boolean;
-  export { schedule, validate };
-  export default { schedule, validate };
+  function getTasks(): Map<string, ScheduledTask>;
+  export { schedule, validate, getTasks };
+  export default { schedule, validate, getTasks };
 }

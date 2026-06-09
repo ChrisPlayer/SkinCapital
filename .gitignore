@@ -1,8 +1,13 @@
 node_modules/
 .env
-data/inventory.db
-data/inventory.db-wal
-data/inventory.db-shm
+.env.*
+!.env.example
+data/*.db*
 data/item_schema.json
 .DS_Store
 *.log
+
+dist/
+
+# Workflow non poussable via ce token OAuth (manque le scope 'workflow')
+.github/workflows/ci.yml

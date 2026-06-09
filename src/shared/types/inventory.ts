@@ -37,6 +37,8 @@ export interface ItemGroup {
   stickerValue: number;
   priceChange: number | null;
   priceChangePercent: number | null;
+  /** Purchase price per unit for this profile (null when not set). */
+  buyPrice: number | null;
 }
 
 export interface StorageUnit {
@@ -53,6 +55,7 @@ export interface StorageUnit {
 export interface Price {
   steam: number | null;
   csfloat: number | null;
+  skinport: number | null;
   average: number | null;
   timestamp: string | null;
 }

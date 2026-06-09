@@ -1,9 +1,13 @@
 import axios, { type AxiosProxyConfig } from 'axios';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 import { logger } from '../../lib/logger.ts';
+import { getResolvedMode, getConfiguredProxies, onPricingConfigChange } from './pricing.config.ts';
 
 export interface SteamProxyWorker {
   id: string;
   proxy: AxiosProxyConfig | null;
+  agent?: HttpsProxyAgent<string>;
   busy: boolean;
   cooldownUntil: number;
   overviewDisabledUntil: number;
@@ -104,6 +108,77 @@ const STEAM_FREE_PROXY_SOURCES = (process.env.STEAM_FREE_PROXY_SOURCES || '')
   .map((entry) => entry.trim())
   .filter(Boolean);
 
+// Paid/residential proxies with optional user:pass auth. When set, these are
+// used INSTEAD of the scraped free pool and health-verification is skipped
+// (paid proxies are trusted). One rotating gateway is fine — it gets replicated
+// across the worker count so requests run concurrently with rotating exit IPs.
+// Format per entry: [http://][user:pass@]host:port  (comma or newline separated)
+export type PricingMode = 'proxy' | 'direct';
+
+// Resolved pricing mode (fast paid proxies vs slow/complete direct). The actual
+// config (auto|proxy|direct + the proxy list) lives in pricing.config and is
+// settable from the UI; here we just consume the resolved value.
+export function getPricingMode(): PricingMode {
+  return getResolvedMode();
+}
+
+// When the pricing config changes (UI save), rebuild the worker pool now so the
+// next price fetch uses the new mode/proxies immediately.
+onPricingConfigChange(() => {
+  ensureSteamProxyPool(true).catch(() => {
+    /* errors are logged inside ensureSteamProxyPool */
+  });
+});
+
+/** Block loopback / private / link-local hosts to avoid SSRF via the test endpoint. */
+function isPrivateHost(host: string): boolean {
+  // Normalize IPv4-mapped IPv6 (::ffff:127.0.0.1) so the v4 ranges apply.
+  const h = host.toLowerCase().trim().replace(/^::ffff:/, '');
+  if (h === 'localhost' || h === '::1' || h.endsWith('.localhost')) return true;
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const a = parseInt(m[1], 10);
+    const b = parseInt(m[2], 10);
+    if (a === 0 || a === 127 || a === 10) return true;
+    if (a === 169 && b === 254) return true; // link-local
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  }
+  if (h.startsWith('fd') || h.startsWith('fc') || h.startsWith('fe80')) return true; // IPv6 ULA/link-local
+  return false;
+}
+
+/** Validate a single proxy entry by making a request through it (returns exit IP). */
+export async function testProxy(raw: string): Promise<{ ok: boolean; ip?: string; error?: string }> {
+  const cfg = parseProxyUrl(raw);
+  if (!cfg) return { ok: false, error: 'Format invalide (attendu host:port:user:pass ou http://user:pass@host:port)' };
+  if (isPrivateHost(cfg.host)) return { ok: false, error: 'Hote prive/loopback refuse' };
+  // A literal-IP check is not enough: a domain name can resolve to a private
+  // address (SSRF via DNS). Resolve every address and reject private ones.
+  if (!/^[0-9.]+$/.test(cfg.host) && !cfg.host.includes(':')) {
+    try {
+      const addrs = await dnsLookup(cfg.host, { all: true });
+      if (addrs.some((a) => isPrivateHost(a.address))) {
+        return { ok: false, error: 'Hote prive/loopback refuse (resolution DNS)' };
+      }
+    } catch {
+      return { ok: false, error: 'Resolution DNS impossible' };
+    }
+  }
+  try {
+    const res = await axios.get('https://api.ipify.org?format=json', {
+      httpsAgent: makeAgent(cfg),
+      proxy: false,
+      timeout: 12000,
+    });
+    return { ok: true, ip: (res.data as { ip?: string })?.ip };
+  } catch (err) {
+    const e = err as { response?: { status?: number }; message?: string };
+    return { ok: false, error: e.response?.status ? `HTTP ${e.response.status}` : e.message || 'échec' };
+  }
+}
+
 let workers: SteamProxyWorker[] = [];
 let refreshPromise: Promise<void> | null = null;
 let lastRefreshAt = 0;
@@ -137,6 +212,54 @@ function parseProxyText(rawText: string): Array<{ host: string; port: number }> 
     results.push({ host, port });
   }
   return results;
+}
+
+/** Parse a full proxy URL (with optional auth) into an AxiosProxyConfig. */
+export function parseProxyUrl(raw: string): AxiosProxyConfig | null {
+  try {
+    let s = raw.trim();
+    // Accept the raw "host:port:user:pass" provider format (e.g. Geonode).
+    if (!/^[a-z]+:\/\//i.test(s) && !s.includes('@')) {
+      const parts = s.split(':');
+      if (parts.length === 4) {
+        const [host, port, user, pass] = parts;
+        s = `http://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`;
+      }
+    }
+    const withScheme = /^[a-z]+:\/\//i.test(s) ? s : `http://${s}`;
+    const url = new URL(withScheme);
+    const port = parseInt(url.port, 10);
+    if (!url.hostname || !Number.isFinite(port) || port < 1 || port > 65535) return null;
+    const config: AxiosProxyConfig = {
+      host: url.hostname,
+      port,
+      protocol: (url.protocol.replace(':', '') || 'http') as AxiosProxyConfig['protocol'],
+    };
+    if (url.username || url.password) {
+      config.auth = {
+        username: decodeURIComponent(url.username),
+        password: decodeURIComponent(url.password),
+      };
+    }
+    return config;
+  } catch {
+    return null;
+  }
+}
+
+function proxyToUrl(proxy: AxiosProxyConfig): string {
+  const scheme = proxy.protocol || 'http';
+  const auth = proxy.auth
+    ? `${encodeURIComponent(proxy.auth.username)}:${encodeURIComponent(proxy.auth.password)}@`
+    : '';
+  return `${scheme}://${auth}${proxy.host}:${proxy.port}`;
+}
+
+// Tunnel HTTPS through the proxy via a real CONNECT agent. axios's built-in
+// `proxy` option mishandles authenticated HTTPS proxies (HPE_* / ECONNRESET).
+function makeAgent(proxy: AxiosProxyConfig | null | undefined): HttpsProxyAgent<string> | undefined {
+  if (!proxy) return undefined;
+  return new HttpsProxyAgent(proxyToUrl(proxy));
 }
 
 async function fetchProxySource(sourceUrl: string): Promise<Array<{ host: string; port: number }>> {
@@ -202,7 +325,8 @@ async function verifySteamProxy(proxy: AxiosProxyConfig): Promise<ProxyProbeResu
   try {
     const response = await axios.get(STEAM_PROXY_VERIFY_URL, {
       timeout: STEAM_PROXY_VERIFY_TIMEOUT_MS,
-      proxy,
+      httpsAgent: makeAgent(proxy),
+      proxy: false,
       validateStatus: () => true,
       headers: {
         Accept: 'application/json,text/plain,*/*',
@@ -300,6 +424,7 @@ function buildWorkers(proxyPool: AxiosProxyConfig[]): SteamProxyWorker[] {
     result.push({
       id: `proxy-${index + 1}`,
       proxy,
+      agent: makeAgent(proxy),
       busy: false,
       cooldownUntil: 0,
       overviewDisabledUntil: 0,
@@ -337,6 +462,47 @@ function buildWorkers(proxyPool: AxiosProxyConfig[]): SteamProxyWorker[] {
     logger.warn(
       `[Price] Steam worker pool degraded: ${result.length}/${STEAM_PROXY_WORKERS} workers ready (${selected.length} proxy, ${directToCreate} direct).`,
     );
+  }
+
+  return result;
+}
+
+/** Build workers from configured paid proxies (replicated across the worker count). */
+function buildCustomProxyWorkers(): SteamProxyWorker[] {
+  const parsed = getConfiguredProxies().map(parseProxyUrl).filter((p): p is AxiosProxyConfig => p !== null);
+  if (parsed.length === 0) {
+    logger.warn('[Price] Proxies configured but none could be parsed; falling back to direct.');
+    return buildWorkers([]);
+  }
+
+  const directWorkersTarget = Math.min(STEAM_DIRECT_WORKERS, Math.max(0, STEAM_PROXY_WORKERS - 1));
+  const proxyWorkersTarget = Math.max(parsed.length, STEAM_PROXY_WORKERS - directWorkersTarget);
+  const result: SteamProxyWorker[] = [];
+
+  for (let i = 0; i < proxyWorkersTarget; i++) {
+    const proxy = parsed[i % parsed.length];
+    result.push({
+      id: `res-${i + 1}`,
+      proxy: { ...proxy },
+      agent: makeAgent(proxy),
+      busy: false,
+      cooldownUntil: 0,
+      overviewDisabledUntil: 0,
+      failureStreak: 0,
+      isDirect: false,
+    });
+  }
+
+  for (let i = 0; i < directWorkersTarget; i++) {
+    result.push({
+      id: `direct-${i + 1}`,
+      proxy: null,
+      busy: false,
+      cooldownUntil: 0,
+      overviewDisabledUntil: 0,
+      failureStreak: 0,
+      isDirect: true,
+    });
   }
 
   return result;
@@ -393,6 +559,37 @@ export async function ensureSteamProxyPool(force = false): Promise<void> {
   }
 
   refreshPromise = (async () => {
+    if (getPricingMode() === 'direct') {
+      workers = [
+        {
+          id: 'direct-1',
+          proxy: null,
+          busy: false,
+          cooldownUntil: 0,
+          overviewDisabledUntil: 0,
+          failureStreak: 0,
+          isDirect: true,
+        },
+      ];
+      lastRefreshAt = Date.now();
+      nextPickIndex = 0;
+      logger.info(
+        '[Price] Direct mode (no proxy): single throttled connection over your own IP — slower, but every item is checked and Steam is never rate-limited.',
+      );
+      return;
+    }
+    const configuredProxies = getConfiguredProxies();
+    if (configuredProxies.length > 0) {
+      workers = buildCustomProxyWorkers();
+      lastRefreshAt = Date.now();
+      nextPickIndex = 0;
+      const proxyCount = workers.filter((w) => !w.isDirect).length;
+      logger.info(
+        `[Price] Residential proxy mode: ${configuredProxies.length} endpoint(s) → ${proxyCount} worker(s), verification skipped.`,
+      );
+      logPoolStats();
+      return;
+    }
     const proxyPool = await fetchFreeProxies();
     const verifiedProxyPool = await verifyProxyPool(proxyPool);
     workers = buildWorkers(verifiedProxyPool);
@@ -429,6 +626,10 @@ export function releaseSteamProxyWorker(worker: SteamProxyWorker) {
 
 export function getSteamProxyConfig(worker: SteamProxyWorker): AxiosProxyConfig | false {
   return worker.proxy || false;
+}
+
+export function getSteamProxyAgent(worker: SteamProxyWorker): HttpsProxyAgent<string> | undefined {
+  return worker.agent;
 }
 
 export function markSteamWorkerRateLimited(

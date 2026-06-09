@@ -1,21 +1,11 @@
 import Database from 'better-sqlite3';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import * as schema from './schema.ts';
 import { logger } from '../lib/logger.ts';
 
 const DB_PATH = path.join(process.cwd(), 'data', 'inventory.db');
 
 let sqlite: Database.Database | null = null;
-let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
-
-export function getDb() {
-  if (!_db) {
-    throw new Error('Database not initialized. Call initDb() first.');
-  }
-  return _db;
-}
 
 export function getSqlite() {
   if (!sqlite) {
@@ -30,8 +20,8 @@ export function initDb() {
   sqlite = new Database(DB_PATH);
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
-
-  _db = drizzle(sqlite, { schema });
+  // Avoid SQLITE_BUSY when the cron price refresh and a manual refresh write concurrently.
+  sqlite.pragma('busy_timeout = 5000');
 
   // Profiles table
   sqlite.exec(`
@@ -77,14 +67,15 @@ export function initDb() {
     )
   `);
 
-  // History table
+  // History table (one snapshot per profile, per price source, per local day)
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       steam_id TEXT,
+      source TEXT NOT NULL DEFAULT 'steam',
       total_value REAL NOT NULL,
       item_count INTEGER NOT NULL,
-      timestamp DATE DEFAULT (date('now'))
+      timestamp DATE DEFAULT (date('now', 'localtime'))
     )
   `);
 
@@ -108,9 +99,10 @@ export function initDb() {
       CREATE TABLE history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         steam_id TEXT,
+        source TEXT NOT NULL DEFAULT 'steam',
         total_value REAL NOT NULL,
         item_count INTEGER NOT NULL,
-        timestamp DATE DEFAULT (date('now'))
+        timestamp DATE DEFAULT (date('now', 'localtime'))
       )
     `);
     try {
@@ -123,29 +115,78 @@ export function initDb() {
     sqlite.exec('DROP TABLE IF EXISTS history_old');
   }
 
+  // Migration: per-source history snapshots (steam/csfloat/skinport)
+  const historyCols2 = sqlite.pragma('table_info(history)') as Array<{ name: string }>;
+  if (!historyCols2.some((c) => c.name === 'source')) {
+    sqlite.exec(`ALTER TABLE history ADD COLUMN source TEXT NOT NULL DEFAULT 'steam'`);
+  }
+
   // Indexes
+  // Key/value app settings (e.g. pricing mode + proxies, set from the UI)
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    )
+  `);
+
+  // Purchase prices (per profile, per item) backing the P&L computation
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS purchases (
+      steam_id TEXT NOT NULL,
+      market_hash_name TEXT NOT NULL,
+      buy_price_eur REAL NOT NULL,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (steam_id, market_hash_name)
+    )
+  `);
+
+  // Custom price-threshold alerts (triggered when a fresh steam price crosses)
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS price_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      steam_id TEXT NOT NULL,
+      market_hash_name TEXT NOT NULL,
+      direction TEXT NOT NULL CHECK(direction IN ('above','below')),
+      threshold_eur REAL NOT NULL,
+      triggered_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_items_market_hash ON items(market_hash_name)');
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_items_casket ON items(casket_id)');
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_items_steam_id ON items(steam_id)');
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_prices_name ON prices(market_hash_name)');
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_prices_timestamp ON prices(timestamp)');
+  // Composite index backing the "latest price per (name, source)" reads.
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_prices_name_source_ts ON prices(market_hash_name, source, timestamp)');
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp)');
+  // Alert trigger checks look up active alerts by item name on every fresh price.
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_price_alerts_name ON price_alerts(market_hash_name)');
+  // One snapshot per (profile, source, day) — replaces the old (profile, day) key.
+  sqlite.exec('DROP INDEX IF EXISTS idx_history_steam_date');
   sqlite.exec(
-    'CREATE UNIQUE INDEX IF NOT EXISTS idx_history_steam_date ON history(steam_id, timestamp)',
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_history_steam_source_date ON history(steam_id, source, timestamp)',
   );
 
-  // Cleanup old data
-  sqlite.exec(`DELETE FROM history WHERE timestamp < date('now', '-90 days')`);
-  sqlite.exec(`DELETE FROM prices WHERE timestamp < datetime('now', '-30 days')`);
+  // Cleanup old data (also run periodically by the cron, not just at boot)
+  cleanupOldData();
 
   logger.info('[DB] Database initialized (WAL mode, better-sqlite3)');
+}
+
+/** Retention: prune old history/price rows. Safe to call on a schedule. */
+export function cleanupOldData() {
+  const sql = getSqlite();
+  sql.exec(`DELETE FROM history WHERE timestamp < date('now', '-90 days')`);
+  sql.exec(`DELETE FROM prices WHERE timestamp < datetime('now', '-30 days')`);
 }
 
 export function closeDb() {
   if (sqlite) {
     sqlite.close();
     sqlite = null;
-    _db = null;
     logger.info('[DB] Database closed');
   }
 }

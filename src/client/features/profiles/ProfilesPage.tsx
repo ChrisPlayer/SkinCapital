@@ -7,21 +7,21 @@ import { Plus, LogIn, Package, Loader2 } from 'lucide-react';
 export function ProfilesPage() {
   const navigate = useNavigate();
   const { data: profiles, isLoading } = useProfiles();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   return (
-    <div className="min-h-screen bg-sf-body relative">
+    <div className="min-h-screen relative">
       <div className="grid-overlay" />
 
       <header className="relative z-10 border-b border-white/[0.06]">
         <div className="max-w-5xl mx-auto px-6 py-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-1 h-6 rounded-full bg-sf-cyan shadow-[0_0_10px_#00ccff]" />
+            <div className="w-1 h-6 rounded-full bg-[color:var(--accent)] shadow-[0_0_10px_var(--accent)]" />
             <span className="font-display text-2xl font-bold">SkinCapital</span>
           </div>
           <button
             onClick={() => navigate('/login')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sf-cyan text-black font-semibold text-sm hover:bg-sf-cyan/90 transition-colors shadow-[0_0_20px_rgba(0,204,255,0.3)]"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl btn-accent font-semibold text-sm glow-cyan"
           >
             <Plus className="w-4 h-4" />
             {t('profiles.addAccount')}
@@ -80,7 +80,7 @@ export function ProfilesPage() {
 
                 <div className="font-mono text-[10px] text-sf-dim">
                   {profile.lastRefresh
-                    ? `${t('profiles.lastSync')}: ${formatDate(profile.lastRefresh)}`
+                    ? `${t('profiles.lastSync')}: ${formatDate(profile.lastRefresh, locale)}`
                     : t('profiles.neverSynced')}
                 </div>
               </div>
@@ -95,7 +95,7 @@ export function ProfilesPage() {
             </p>
             <button
               onClick={() => navigate('/login')}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-sf-cyan text-black font-semibold text-sm hover:bg-sf-cyan/90 transition-colors shadow-[0_0_20px_rgba(0,204,255,0.3)]"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl btn-accent font-semibold text-sm glow-cyan"
             >
               <LogIn className="w-4 h-4" />
               {t('auth.login')}

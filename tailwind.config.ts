@@ -40,8 +40,9 @@ const config: Config = {
           DEFAULT: 'hsl(var(--muted))',
           foreground: 'hsl(var(--muted-foreground))',
         },
+        // --accent holds a raw hex (set from Settings), not an HSL triple.
         accent: {
-          DEFAULT: 'hsl(var(--accent))',
+          DEFAULT: 'var(--accent)',
           foreground: 'hsl(var(--accent-foreground))',
         },
         popover: {

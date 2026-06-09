@@ -27,16 +27,14 @@ export interface DashboardData {
   totalItems: number;
   uniqueItems: number;
   totalValue: number;
-  missingPrices: MissingPricesSummary;
+  /** Sum of buyPrice x quantity over groups with a purchase price (null when no purchases). */
+  invested: number | null;
+  /** Sum of (group.total - buyPrice x quantity) over those groups (null when no purchases). */
+  pnl: number | null;
   change24h: ChangeInfo;
   historyData: HistoryPoint[];
   dailyHistory: DailyHistoryEntry[];
   priceWindow: { from: string; to: string } | null;
-}
-
-export interface MissingPricesSummary {
-  itemCount: number;
-  uniqueCount: number;
 }
 
 export interface HistoryPoint {
@@ -60,7 +58,7 @@ export interface ChangeInfo {
 export interface InventoryStatus {
   isRefreshing: boolean;
   syncType: 'inventory' | 'prices' | null;
-  source: 'steam' | 'csfloat' | null;
+  source: 'steam' | 'csfloat' | 'skinport' | null;
   lastRefresh: string | null;
   progress: RefreshProgress | null;
 }
@@ -70,11 +68,38 @@ export interface RefreshProgress {
   total: number;
 }
 
+export interface PriceAlert {
+  id: number;
+  steamId: string;
+  marketHashName: string;
+  direction: 'above' | 'below';
+  thresholdEur: number;
+  triggeredAt: string | null;
+  createdAt: string;
+  /** Latest cached Steam price for the item (null when never priced). */
+  currentPrice: number | null;
+}
+
+export interface Mover {
+  name: string;
+  oldPrice: number;
+  newPrice: number;
+  changePct: number;
+}
+
+export interface MoversResponse {
+  days: number;
+  gainers: Mover[];
+  losers: Mover[];
+}
+
 export interface PriceDetail {
   name: string;
   price: number | null;
   rawPrice: Price;
   change: ChangeInfo;
+  /** 30-day raw price points for the selected source (sparkline). */
+  history: Array<{ date: string; price: number }>;
 }
 
 export interface ApiError {

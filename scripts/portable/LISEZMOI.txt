@@ -1,0 +1,31 @@
+==========================================
+  SKINCAPITAL - Suivi d'inventaire CS2
+==========================================
+
+DEMARRER
+  1. Double-cliquez sur "SkinCapital".
+  2. Patientez quelques secondes : votre navigateur s'ouvre
+     tout seul sur l'application.
+  (Si Windows affiche un avertissement de securite la premiere
+   fois : cliquez sur "Informations complementaires" puis
+   "Executer quand meme". C'est normal pour une application
+   non signee.)
+
+ARRETER
+  Double-cliquez sur "Arreter-SkinCapital".
+  (Sinon l'application continue de tourner en arriere-plan et
+   recharge les prix toute seule chaque jour a midi.)
+
+PREMIERE UTILISATION
+  1. Cliquez sur "Ajouter un compte" et connectez-vous avec
+     votre compte Steam (validation sur l'app Steam mobile ou
+     code Steam Guard).
+  2. L'inventaire se charge, puis les prix arrivent petit a petit.
+
+BON A SAVOIR
+  - Vos donnees restent sur VOTRE ordinateur (dossier app\data).
+  - Votre mot de passe Steam n'est JAMAIS enregistre, nulle part.
+  - Tous les reglages (langue, source de prix, heure du
+    rechargement automatique, couleur...) sont dans l'application,
+    icone engrenage "Parametres".
+  - Apres un redemarrage du PC, relancez simplement "SkinCapital".

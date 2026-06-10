@@ -1,4 +1,6 @@
 import 'dotenv/config';
+import './lib/session-secret.ts';
+import { spawn } from 'child_process';
 import { createApp } from './app.ts';
 import { initDb, closeDb } from './db/client.ts';
 import { loadPricingConfig } from './features/pricing/pricing.config.ts';
@@ -12,11 +14,24 @@ const PORT = parseInt(process.env.PORT || '3000');
 // (only do that behind HTTPS).
 const HOST = process.env.HOST || '127.0.0.1';
 const REFRESH_INTERVAL = parseInt(process.env.REFRESH_INTERVAL || '10');
+// Desktop convenience (set by the portable pack): open the UI once the server
+// is up. Stays off in dev and in Docker.
+const OPEN_BROWSER = ['1', 'true'].includes((process.env.OPEN_BROWSER || '').toLowerCase());
+
+function openBrowser(url: string) {
+  const [cmd, args] =
+    process.platform === 'win32'
+      ? ['cmd', ['/c', 'start', '', url]]
+      : process.platform === 'darwin'
+        ? ['open', [url]]
+        : ['xdg-open', [url]];
+  spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+}
 
 async function initialize() {
   logger.info('========================================');
-  logger.info('  CS2 Inventory Tracker v2.0.0');
-  logger.info('  TypeScript + React + Vite');
+  logger.info(`  SkinCapital ${process.env.APP_VERSION || 'dev'}`);
+  logger.info('  CS2 Inventory Tracker');
   logger.info('========================================');
   logger.info('');
 
@@ -44,6 +59,9 @@ async function initialize() {
     }
     logger.info('[Server] Press Ctrl+C to stop');
     logger.info('');
+    if (OPEN_BROWSER) {
+      openBrowser(`http://127.0.0.1:${PORT}`);
+    }
   });
 }
 

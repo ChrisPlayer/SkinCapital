@@ -4,9 +4,10 @@ import https from 'https';
 import { WEAPON_NAMES } from '../../../shared/constants/weapons.ts';
 import { getWearName } from '../../../shared/constants/wear.ts';
 import { logger } from '../../lib/logger.ts';
+import { DATA_DIR } from '../../lib/paths.ts';
 import type { Sticker } from '../../../shared/types/inventory.ts';
 
-const CACHE_DIR = path.join(process.cwd(), 'data');
+const CACHE_DIR = DATA_DIR;
 const CACHE_FILE = path.join(CACHE_DIR, 'item_schema.json');
 const CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 

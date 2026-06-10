@@ -1,5 +1,6 @@
 import express from 'express';
 import path from 'path';
+import { CLIENT_DIST } from './lib/paths.ts';
 import { helmetMiddleware, corsMiddleware, apiLimiter, csrfGuard } from './middleware/security.ts';
 import { sessionMiddleware } from './middleware/session.ts';
 import { errorHandler } from './middleware/error-handler.ts';
@@ -48,10 +49,9 @@ export function createApp() {
 
   // Serve Vite build in production
   if (process.env.NODE_ENV === 'production') {
-    const clientDist = path.join(process.cwd(), 'dist', 'client');
-    app.use(express.static(clientDist));
+    app.use(express.static(CLIENT_DIST));
     app.get('*', (_req, res) => {
-      res.sendFile(path.join(clientDist, 'index.html'));
+      res.sendFile(path.join(CLIENT_DIST, 'index.html'));
     });
   }
 

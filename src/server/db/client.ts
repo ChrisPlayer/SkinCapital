@@ -2,8 +2,9 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { logger } from '../lib/logger.ts';
+import { DATA_DIR } from '../lib/paths.ts';
 
-const DB_PATH = path.join(process.cwd(), 'data', 'inventory.db');
+const DB_PATH = path.join(DATA_DIR, 'inventory.db');
 
 let sqlite: Database.Database | null = null;
 

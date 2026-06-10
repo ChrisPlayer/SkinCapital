@@ -53,6 +53,14 @@ const translations = {
     en: 'Log in with your Steam account to start tracking your CS2 inventory.',
   },
 
+  // ── Multi-account overview (home page banner) ──
+  'overview.title': { fr: 'Vue combinee', en: 'Combined overview' },
+  'overview.combinedValue': { fr: 'Valeur combinee', en: 'Combined value' },
+  'overview.totalItems': { fr: 'Items au total', en: 'Total items' },
+  'overview.accounts': { fr: 'Comptes', en: 'Accounts' },
+  'overview.topItems': { fr: 'Top items combines', en: 'Combined top items' },
+  'overview.itemsOnly': { fr: 'Valeurs Steam, hors stickers.', en: 'Steam values, stickers excluded.' },
+
   // ── Dashboard nav ──
   'nav.dashboard': { fr: 'Dashboard', en: 'Dashboard' },
   'nav.inventory': { fr: 'Inventaire', en: 'Inventory' },
@@ -101,6 +109,7 @@ const translations = {
   'filter.all': { fr: 'Tous', en: 'All' },
   'filter.normal': { fr: 'Normal', en: 'Normal' },
   'filter.withStickers': { fr: 'Avec stickers', en: 'With stickers' },
+  'filter.notablePatterns': { fr: 'Patterns notables', en: 'Notable patterns' },
   'filter.reset': { fr: 'Reinitialiser', en: 'Reset' },
   'type.knife': { fr: 'Couteaux', en: 'Knives' },
   'type.gloves': { fr: 'Gants', en: 'Gloves' },
@@ -114,6 +123,12 @@ const translations = {
   'type.agent': { fr: 'Agents', en: 'Agents' },
   'type.other': { fr: 'Autres', en: 'Other' },
 
+  // ── Rare patterns / finishes ──
+  'patterns.title': { fr: 'Patterns notables', en: 'Notable patterns' },
+  'patterns.fnlow': { fr: 'Float tres bas', en: 'Very low float' },
+  'patterns.nearzero': { fr: 'Float quasi nul', en: 'Near-zero float' },
+  'patterns.bluegem': { fr: 'Blue Gem', en: 'Blue Gem' },
+
   // ── Portfolio composition ──
   'portfolio.composition': { fr: 'Repartition du portefeuille', en: 'Portfolio breakdown' },
 
@@ -122,6 +137,18 @@ const translations = {
   'movers.gainers': { fr: 'Hausses', en: 'Gainers' },
   'movers.losers': { fr: 'Baisses', en: 'Losers' },
   'movers.none': { fr: 'Pas assez de donnees', en: 'Not enough data' },
+
+  // ── Market trends (market-wide, not profile-scoped) ──
+  'trends.title': { fr: 'Tendances du marche', en: 'Market trends' },
+  'trends.caption': {
+    fr: 'Couvre uniquement les items deja suivis par l\'app (items possedes/rafraichis + leurs stickers), pas tout le marche Steam.',
+    en: 'Covers only items the app has already tracked (owned/refreshed items + their stickers), not the entire Steam market.',
+  },
+  'trends.none': { fr: 'Pas assez d\'historique', en: 'Not enough history' },
+  'trends.noneDesc': {
+    fr: 'Les tendances apparaitront ici apres quelques jours de prix collectes.',
+    en: 'Trends will appear here after a few days of collected prices.',
+  },
 
   // ── Pagination ──
   'pagination.prevPage': { fr: 'Page precedente', en: 'Previous page' },
@@ -211,6 +238,21 @@ const translations = {
   'toast.scheduleSaved': { fr: 'Planification enregistree', en: 'Schedule saved' },
   'toast.runStarted': { fr: 'Rechargement des prix lance', en: 'Price reload started' },
   'toast.runAlready': { fr: 'Un rechargement est deja en cours', en: 'A reload is already running' },
+
+  // ── Automatic backup ──
+  'settings.backup': { fr: 'Sauvegarde automatique', en: 'Automatic backup' },
+  'settings.backupDesc': {
+    fr: 'Exporte chaque jour (03:00) vos profils, items, achats, alertes, historique et reglages dans un fichier JSON. Les 14 dernieres sauvegardes sont conservees.',
+    en: 'Exports your profiles, items, purchases, alerts, history and settings to a JSON file every day (03:00). The last 14 backups are kept.',
+  },
+  'settings.backupNow': { fr: 'Sauvegarder maintenant', en: 'Back up now' },
+  'settings.backupDownload': { fr: 'Telecharger la derniere sauvegarde', en: 'Download latest backup' },
+  'settings.backupLast': { fr: 'Derniere sauvegarde', en: 'Last backup' },
+  'settings.backupNone': { fr: 'Aucune sauvegarde pour le moment', en: 'No backup yet' },
+  'settings.backupCount': { fr: 'sauvegardes', en: 'backups' },
+  'toast.backupDone': { fr: 'Sauvegarde effectuee', en: 'Backup completed' },
+  'toast.backupRunning': { fr: 'Une sauvegarde est deja en cours', en: 'A backup is already running' },
+  'toast.backupFailed': { fr: 'Echec de la sauvegarde', en: 'Backup failed' },
 
   // ── Toasts ──
   'toast.settingsSaved': { fr: 'Parametres enregistres', en: 'Settings saved' },

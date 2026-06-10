@@ -7,7 +7,11 @@ if not exist "%PIDFILE%" (
   exit /b 0
 )
 set /p SRVPID=<"%PIDFILE%"
-taskkill /PID %SRVPID% /F >nul 2>&1
+rem Ne tuer que si ce PID est bien un process node (evite de tuer un PID recycle).
+tasklist /FI "PID eq %SRVPID%" /FI "IMAGENAME eq node.exe" 2>nul | find "%SRVPID%" >nul
+if %ERRORLEVEL%==0 (
+  taskkill /PID %SRVPID% /F >nul 2>&1
+)
 del "%PIDFILE%" >nul 2>&1
 echo SkinCapital est arrete.
 ping -n 3 127.0.0.1 >nul

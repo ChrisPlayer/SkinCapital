@@ -15,6 +15,19 @@ export interface Profile {
   lastRefresh: string | null;
 }
 
+export interface OverviewTopItem {
+  marketHashName: string;
+  totalValue: number;
+  imageUrl: string | null;
+}
+
+export interface Overview {
+  totalValue: number;
+  totalItems: number;
+  profileCount: number;
+  topItems: OverviewTopItem[];
+}
+
 export interface DashboardData {
   items: ItemGroup[];
   mainInventory: {

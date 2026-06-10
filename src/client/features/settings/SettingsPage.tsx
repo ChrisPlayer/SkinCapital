@@ -9,10 +9,15 @@ import {
   useSchedule,
   useSetSchedule,
   useRunScheduleNow,
+  useBackupSettings,
+  useSetBackupSettings,
+  useRunBackup,
 } from '../../hooks/useApi.ts';
+import { api } from '../../lib/api-client.ts';
+import { formatDate } from '../../lib/formatters.ts';
 import { useToast } from '../../components/toast.tsx';
 import { PillButton } from '../../components/controls.tsx';
-import { ChevronLeft, Check, Loader2, Play, RotateCcw } from 'lucide-react';
+import { ChevronLeft, Check, Loader2, Play, RotateCcw, Download, Save } from 'lucide-react';
 
 type PricingMode = 'auto' | 'proxy' | 'direct';
 
@@ -77,6 +82,29 @@ export function SettingsPage() {
         else toast.error(t('toast.runAlready'));
       },
       onError: (err) => toast.error((err as Error).message),
+    });
+  };
+
+  // Automatic backup (anti data-loss).
+  const { data: backup } = useBackupSettings();
+  const saveBackup = useSetBackupSettings();
+  const runBackup = useRunBackup();
+
+  const handleToggleBackup = () => {
+    if (!backup) return;
+    saveBackup.mutate(
+      { enabled: !backup.enabled },
+      { onError: (err) => toast.error((err as Error).message) },
+    );
+  };
+
+  const handleRunBackup = () => {
+    runBackup.mutate(undefined, {
+      onSuccess: (result) => {
+        if (result.ran) toast.success(t('toast.backupDone'));
+        else toast.error(t('toast.backupRunning'));
+      },
+      onError: (err) => toast.error((err as Error).message || t('toast.backupFailed')),
     });
   };
 
@@ -229,6 +257,41 @@ export function SettingsPage() {
               {t('settings.runNow')}
             </button>
           </div>
+        </div>
+
+        {/* Automatic backup */}
+        <div className="sf-card p-6 mb-4">
+          <h2 className="text-sm font-semibold text-white mb-1">{t('settings.backup')}</h2>
+          <p className="text-xs text-gray-500 mb-4">{t('settings.backupDesc')}</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <PillButton active={backup?.enabled ?? false} onClick={handleToggleBackup} disabled={!backup || saveBackup.isPending}>
+              {backup?.enabled ? t('settings.autoPricesOn') : t('settings.autoPricesOff')}
+            </PillButton>
+            <button
+              onClick={handleRunBackup}
+              disabled={runBackup.isPending}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
+            >
+              {runBackup.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {t('settings.backupNow')}
+            </button>
+            <a
+              href={api.settings.backupDownloadUrl()}
+              download
+              aria-disabled={!backup?.lastBackup}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white ${
+                backup?.lastBackup ? '' : 'pointer-events-none opacity-50'
+              }`}
+            >
+              <Download className="w-3.5 h-3.5" />
+              {t('settings.backupDownload')}
+            </a>
+          </div>
+          <p className="text-[11px] text-gray-500 mt-3">
+            {backup?.lastBackup
+              ? `${t('settings.backupLast')}: ${formatDate(backup.lastBackup.when, locale)} · ${backup.count} ${t('settings.backupCount')}`
+              : t('settings.backupNone')}
+          </p>
         </div>
 
         {/* Price fetch method */}

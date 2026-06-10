@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { getCachedPrices } from './pricing.service.ts';
 import { getItem24hChange } from '../history/history.service.ts';
 import { getItemPriceHistory } from '../../db/queries/history.ts';
-import { getPriceMovers } from '../../db/queries/prices.ts';
+import { getPriceMovers, getMarketMovers } from '../../db/queries/prices.ts';
 
 const router = Router();
 
@@ -40,6 +40,39 @@ router.get('/movers', (req, res) => {
     res.json({ days, gainers, losers });
   } catch {
     res.status(500).json({ error: 'Failed to compute movers' });
+  }
+});
+
+// Market-wide top gainers/losers over a 7/30 day window for one price source.
+// Same filtering/sorting as /movers but NOT scoped to a profile — covers every
+// item the app has ever priced for this source. Top 8 each way.
+router.get('/trends', (req, res) => {
+  try {
+    const source = req.query.source === 'csfloat' ? 'csfloat' : req.query.source === 'skinport' ? 'skinport' : 'steam';
+    const days = req.query.days === '30' ? 30 : 7;
+
+    const movers = getMarketMovers(source, days)
+      .filter((r) => r.oldPrice >= 0.5)
+      .map((r) => ({
+        name: r.name,
+        oldPrice: r.oldPrice,
+        newPrice: r.newPrice,
+        changePct: ((r.newPrice - r.oldPrice) / r.oldPrice) * 100,
+      }))
+      .filter((r) => r.changePct !== 0);
+
+    const gainers = movers
+      .filter((m) => m.changePct > 0)
+      .sort((a, b) => b.changePct - a.changePct)
+      .slice(0, 8);
+    const losers = movers
+      .filter((m) => m.changePct < 0)
+      .sort((a, b) => a.changePct - b.changePct)
+      .slice(0, 8);
+
+    res.json({ days, gainers, losers });
+  } catch {
+    res.status(500).json({ error: 'Failed to compute trends' });
   }
 });
 

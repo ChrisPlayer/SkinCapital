@@ -4,6 +4,7 @@ import { StickerRow } from './StickerRow.tsx';
 import { formatEur } from '../../lib/formatters.ts';
 import { useI18n } from '../../lib/i18n.tsx';
 import { getDisplayItemName } from '../../lib/item-display.ts';
+import { detectPatterns } from '../../../shared/lib/patterns.ts';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
 
 interface ItemCardProps {
@@ -16,6 +17,12 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
   const { priceProvider: pp } = useI18n();
   const displayName = getDisplayItemName(item.marketHashName, item.wear?.name);
   const hasFloat = item.floatValue !== null && item.floatValue !== undefined;
+  const patternTags = detectPatterns({ marketHashName: item.marketHashName, floatValue: item.floatValue, paintSeed: item.paintSeed });
+  const notableTier = patternTags.find((p) => p.tier === 'gold')
+    ? 'gold'
+    : patternTags.find((p) => p.tier === 'cyan')
+      ? 'cyan'
+      : null;
 
   return (
     <div
@@ -58,6 +65,15 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
 
       <div className="mt-3 min-w-0">
         <p className="text-[13px] font-semibold text-white truncate" title={displayName}>
+          {notableTier && (
+            <span
+              className="mr-1 text-[11px] align-middle"
+              style={{ color: notableTier === 'gold' ? '#f0b90b' : 'var(--accent)' }}
+              aria-hidden="true"
+            >
+              {'♦'}
+            </span>
+          )}
           {displayName}
         </p>
 

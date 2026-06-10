@@ -97,6 +97,75 @@ export function getProfileBySteamId(steamId: string): ProfileRow | undefined {
     .get(steamId) as ProfileRow | undefined;
 }
 
+export interface OverviewTopItemRow {
+  marketHashName: string;
+  totalValue: number;
+  iconUrl: string | null;
+  schemaImage: string | null;
+}
+
+export interface OverviewResult {
+  totalValue: number;
+  totalItems: number;
+  profileCount: number;
+  topItems: OverviewTopItemRow[];
+}
+
+/**
+ * Aggregate across ALL profiles using the latest steam price per item (same
+ * subquery pattern as getAllProfiles). Item prices only — sticker values are
+ * NOT included here (kept simple). topItems = top 5 by summed value across all
+ * profiles. Raw image fields are returned; the route builds the display URL the
+ * same way the inventory service does.
+ */
+export function getOverview(): OverviewResult {
+  const sqlite = getSqlite();
+
+  const profileCount = (
+    sqlite.prepare('SELECT COUNT(*) AS c FROM profiles').get() as { c: number }
+  ).c;
+
+  // Latest steam price per item, joined onto every owned item row.
+  const latestSteamPrice = `
+    SELECT p1.market_hash_name, p1.price_eur
+    FROM prices p1
+    INNER JOIN (
+      SELECT market_hash_name, MAX(timestamp) as max_ts
+      FROM prices WHERE source = 'steam' GROUP BY market_hash_name
+    ) p2 ON p1.market_hash_name = p2.market_hash_name AND p1.timestamp = p2.max_ts
+    WHERE p1.source = 'steam'`;
+
+  const totals = sqlite
+    .prepare(
+      `SELECT COUNT(*) AS totalItems, SUM(COALESCE(lp.price_eur, 0)) AS totalValue
+       FROM items i
+       LEFT JOIN (${latestSteamPrice}) lp ON lp.market_hash_name = i.market_hash_name`,
+    )
+    .get() as { totalItems: number | null; totalValue: number | null };
+
+  const topItems = sqlite
+    .prepare(
+      `SELECT i.market_hash_name AS marketHashName,
+              SUM(COALESCE(lp.price_eur, 0)) AS totalValue,
+              MAX(i.icon_url) AS iconUrl,
+              MAX(i.schema_image) AS schemaImage
+       FROM items i
+       LEFT JOIN (${latestSteamPrice}) lp ON lp.market_hash_name = i.market_hash_name
+       GROUP BY i.market_hash_name
+       HAVING SUM(COALESCE(lp.price_eur, 0)) > 0
+       ORDER BY totalValue DESC
+       LIMIT 5`,
+    )
+    .all() as OverviewTopItemRow[];
+
+  return {
+    totalValue: totals.totalValue ?? 0,
+    totalItems: totals.totalItems ?? 0,
+    profileCount,
+    topItems,
+  };
+}
+
 export function updateProfileSummary(
   steamId: string,
   itemCount: number,

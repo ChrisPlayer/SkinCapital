@@ -11,7 +11,17 @@ import {
   getPriceRefreshSchedule,
   setPriceRefreshSchedule,
   runDailyPriceRefresh,
+  isBackupEnabled,
+  setBackupEnabled,
+  runDailyBackup,
 } from '../inventory/inventory.jobs.ts';
+import {
+  getLatestBackup,
+  getLatestBackupPath,
+  getBackupCount,
+  isBackupRunning,
+} from '../backup/backup.service.ts';
+import path from 'path';
 import { z } from 'zod';
 
 const router = Router();
@@ -42,6 +52,56 @@ router.post('/settings/schedule', (req, res) => {
 router.post('/settings/schedule/run', (_req, res) => {
   const started = runDailyPriceRefresh();
   res.status(202).json({ ok: true, started });
+});
+
+// ── Automatic backup (anti data-loss) ──
+// Same auth posture as the rest of settings: read is public, writes are CSRF +
+// rate-limited (no Steam login). The download serves ONLY the newest file from
+// data/backups that the backup service itself enumerated — no user path input.
+
+router.get('/settings/backup', (_req, res) => {
+  res.json({
+    enabled: isBackupEnabled(),
+    lastBackup: getLatestBackup(),
+    count: getBackupCount(),
+  });
+});
+
+const backupSchema = z.object({ enabled: z.boolean() });
+
+router.post('/settings/backup', (req, res) => {
+  const parsed = backupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'enabled (bool) required' });
+  }
+  const enabled = setBackupEnabled(parsed.data.enabled);
+  res.json({ ok: true, enabled });
+});
+
+// Run a backup now. ran:false when one was already in progress (guarded).
+router.post('/settings/backup/run', (_req, res) => {
+  if (isBackupRunning()) {
+    return res.json({ ok: true, ran: false });
+  }
+  const ran = runDailyBackup();
+  res.json({ ok: true, ran });
+});
+
+// Stream the newest backup as an attachment. The path comes only from the
+// service's own enumeration of data/backups (no traversal possible).
+router.get('/settings/backup/download', (_req, res) => {
+  const filePath = getLatestBackupPath();
+  if (!filePath) {
+    return res.status(404).json({ error: 'No backup available' });
+  }
+  const downloadName = `cs2-backup-${new Date().toISOString().split('T')[0]}.json`;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
+  res.sendFile(path.resolve(filePath), (err) => {
+    if (err && !res.headersSent) {
+      res.status(500).json({ error: 'Failed to download backup' });
+    }
+  });
 });
 
 // NOTE: writes are NOT behind Steam login — consistent with this LAN/personal

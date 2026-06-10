@@ -181,6 +181,36 @@ export function getPriceMovers(steamId: string, source: string, days: number): M
     .all(source, days.toString(), steamId) as MoverRow[];
 }
 
+/**
+ * Market-wide variant of getPriceMovers: same latest-vs-oldest-in-window logic
+ * but NOT scoped to a profile. Compares the LATEST vs the OLDEST price within
+ * the window for EVERY market_hash_name the app has ever priced for this source
+ * (>=2 points in window). Powers the "Tendances du marche" card. Note: this only
+ * covers items the app has actually priced (owned/refreshed items + stickers),
+ * not the entire Steam market.
+ */
+export function getMarketMovers(source: string, days: number): MoverRow[] {
+  const sqlite = getSqlite();
+  return sqlite
+    .prepare(
+      `WITH windowed AS (
+         SELECT p.market_hash_name, p.price_eur,
+                ROW_NUMBER() OVER (PARTITION BY p.market_hash_name ORDER BY p.timestamp ASC, p.id ASC) AS rn_asc,
+                ROW_NUMBER() OVER (PARTITION BY p.market_hash_name ORDER BY p.timestamp DESC, p.id DESC) AS rn_desc
+         FROM prices p
+         WHERE p.source = ?
+           AND p.price_eur IS NOT NULL
+           AND p.timestamp > datetime('now', '-' || ? || ' days')
+       )
+       SELECT o.market_hash_name AS name, o.price_eur AS oldPrice, n.price_eur AS newPrice
+       FROM windowed o
+       INNER JOIN windowed n
+         ON n.market_hash_name = o.market_hash_name AND n.rn_desc = 1
+       WHERE o.rn_asc = 1 AND o.rn_desc > 1`,
+    )
+    .all(source, days.toString()) as MoverRow[];
+}
+
 export function getOldAveragePrice(marketHashName: string, source = 'steam'): number | null {
   const sqlite = getSqlite();
   // Source-filtered: averaging across steam/csfloat/skinport rows would compare

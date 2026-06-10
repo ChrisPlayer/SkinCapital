@@ -130,11 +130,51 @@ onPricingConfigChange(() => {
   });
 });
 
+/**
+ * Canonicalize the many legal IPv4 spellings (decimal `2130706433`, hex
+ * `0x7f000001`, octal `0177.0.0.1`, shorthand `127.1`) to dotted-quad so the
+ * range checks below can't be bypassed. Returns null if not an IPv4 literal.
+ */
+function canonicalizeIPv4(host: string): string | null {
+  const parts = host.split('.');
+  if (parts.length === 0 || parts.length > 4) return null;
+  const nums: number[] = [];
+  for (const p of parts) {
+    if (p === '') return null;
+    let n: number;
+    if (/^0x[0-9a-f]+$/i.test(p)) n = parseInt(p, 16);
+    else if (/^0[0-7]+$/.test(p)) n = parseInt(p, 8);
+    else if (/^\d+$/.test(p)) n = parseInt(p, 10);
+    else return null;
+    if (!Number.isFinite(n) || n < 0) return null;
+    nums.push(n);
+  }
+  let bytes: number[];
+  if (nums.length === 1) {
+    const v = nums[0];
+    if (v > 0xffffffff) return null;
+    bytes = [(v >>> 24) & 255, (v >>> 16) & 255, (v >>> 8) & 255, v & 255];
+  } else if (nums.length === 2) {
+    if (nums[0] > 255 || nums[1] > 0xffffff) return null;
+    bytes = [nums[0], (nums[1] >> 16) & 255, (nums[1] >> 8) & 255, nums[1] & 255];
+  } else if (nums.length === 3) {
+    if (nums[0] > 255 || nums[1] > 255 || nums[2] > 0xffff) return null;
+    bytes = [nums[0], nums[1], (nums[2] >> 8) & 255, nums[2] & 255];
+  } else {
+    if (nums.some((n) => n > 255)) return null;
+    bytes = nums;
+  }
+  return bytes.join('.');
+}
+
 /** Block loopback / private / link-local hosts to avoid SSRF via the test endpoint. */
 function isPrivateHost(host: string): boolean {
   // Normalize IPv4-mapped IPv6 (::ffff:127.0.0.1) so the v4 ranges apply.
-  const h = host.toLowerCase().trim().replace(/^::ffff:/, '');
+  let h = host.toLowerCase().trim().replace(/^::ffff:/, '');
   if (h === 'localhost' || h === '::1' || h.endsWith('.localhost')) return true;
+  // Collapse alternate IPv4 spellings to dotted-quad before the range checks.
+  const canonical = canonicalizeIPv4(h);
+  if (canonical) h = canonical;
   const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (m) {
     const a = parseInt(m[1], 10);
@@ -171,6 +211,7 @@ export async function testProxy(raw: string): Promise<{ ok: boolean; ip?: string
       httpsAgent: makeAgent(cfg),
       proxy: false,
       timeout: 12000,
+      maxRedirects: 0, // a redirect could point the request at an internal host
     });
     return { ok: true, ip: (res.data as { ip?: string })?.ip };
   } catch (err) {

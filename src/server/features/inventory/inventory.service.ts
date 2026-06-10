@@ -437,6 +437,7 @@ function groupItems(
     const rarity = getItemRarity(name, schemaRarity);
     const quality = getItemQuality(name);
     const floatVal = data.items[0]?.floatValue ?? null;
+    const paintSeed = data.items[0]?.paintSeed ?? null;
     const wear = getWearLevel(floatVal) ?? getWearFromMarketHashName(name);
 
     let stickerValue = 0;
@@ -471,6 +472,7 @@ function groupItems(
       items: [],
       casketIds: [...data.casketIds],
       floatValue: floatVal,
+      paintSeed,
       wear,
       rarity,
       quality,

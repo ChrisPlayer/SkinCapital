@@ -18,6 +18,14 @@ export function useProfiles() {
   });
 }
 
+export function useOverview() {
+  return useQuery({
+    queryKey: ['overview'],
+    queryFn: () => api.overview(),
+    refetchInterval: 30000,
+  });
+}
+
 export function useDashboardData(
   steamId: string,
   days: number = 30,
@@ -141,6 +149,33 @@ export function useRunScheduleNow() {
   });
 }
 
+export function useBackupSettings() {
+  return useQuery({
+    queryKey: ['backup-settings'],
+    queryFn: () => api.settings.getBackup(),
+  });
+}
+
+export function useSetBackupSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { enabled: boolean }) => api.settings.setBackup(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['backup-settings'] });
+    },
+  });
+}
+
+export function useRunBackup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.settings.runBackup(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['backup-settings'] });
+    },
+  });
+}
+
 export function useSetPurchase() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -206,6 +241,17 @@ export function useMovers(
     queryKey: ['movers', steamId, source, days],
     queryFn: () => api.movers(steamId, source, days),
     enabled: !!steamId,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useTrends(
+  source: 'steam' | 'csfloat' | 'skinport' = 'steam',
+  days: 7 | 30 = 7,
+) {
+  return useQuery({
+    queryKey: ['trends', source, days],
+    queryFn: () => api.trends(source, days),
     staleTime: 5 * 60 * 1000,
   });
 }

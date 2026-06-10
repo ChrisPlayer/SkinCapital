@@ -1,8 +1,18 @@
 import { Router } from 'express';
-import { getAllProfiles, getProfileBySteamId } from '../../db/queries/profiles.ts';
+import { getAllProfiles, getProfileBySteamId, getOverview } from '../../db/queries/profiles.ts';
 import type { Profile } from '../../../shared/types/api.ts';
 
 const router = Router();
+
+// Mirrors the inventory service's image building: a Steam economy icon hash is
+// served through the CDN; otherwise fall back to the schema image (already a
+// full URL) when present.
+const STEAM_CDN = 'https://community.akamai.steamstatic.com/economy/image/';
+function buildImageUrl(iconUrl: string | null, schemaImage: string | null): string | null {
+  if (iconUrl) return `${STEAM_CDN}${iconUrl}/200fx200f`;
+  if (schemaImage) return schemaImage;
+  return null;
+}
 
 function toProfile(row: {
   id: number;
@@ -32,6 +42,26 @@ router.get('/profiles', (_req, res) => {
     res.json(rows.map(toProfile));
   } catch {
     res.status(500).json({ error: 'Failed to fetch profiles' });
+  }
+});
+
+// Aggregate across ALL profiles (combined value, item count, account count and
+// the top items by summed steam value). Item prices only — stickers excluded.
+router.get('/overview', (_req, res) => {
+  try {
+    const overview = getOverview();
+    res.json({
+      totalValue: overview.totalValue,
+      totalItems: overview.totalItems,
+      profileCount: overview.profileCount,
+      topItems: overview.topItems.map((it) => ({
+        marketHashName: it.marketHashName,
+        totalValue: it.totalValue,
+        imageUrl: buildImageUrl(it.iconUrl, it.schemaImage),
+      })),
+    });
+  } catch {
+    res.status(500).json({ error: 'Failed to compute overview' });
   }
 });
 

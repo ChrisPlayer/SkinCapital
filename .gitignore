@@ -4,6 +4,7 @@ node_modules/
 !.env.example
 data/*.db*
 data/item_schema.json
+data/backups/
 .DS_Store
 *.log
 

@@ -10,11 +10,13 @@ import {
   useAlerts,
   useDeleteAlert,
   useMovers,
+  useTrends,
 } from '../../hooks/useApi.ts';
 import { useRefreshPolling } from '../../hooks/usePolling.ts';
 import { useI18n, applyFees, type PriceProvider, type TranslationKey } from '../../lib/i18n.tsx';
 import { formatEur, formatPercent, formatDate, computePnl } from '../../lib/formatters.ts';
 import { getDisplayItemName } from '../../lib/item-display.ts';
+import { detectPatterns } from '../../../shared/lib/patterns.ts';
 import { ItemDetailModal } from '../inventory/ItemDetailModal.tsx';
 import { ItemCard } from '../inventory/ItemCard.tsx';
 import { api } from '../../lib/api-client.ts';
@@ -236,6 +238,7 @@ export function DashboardPage() {
     return q === 'stattrak' || q === 'souvenir' || q === 'normal' ? q : '';
   });
   const [stickeredOnly, setStickeredOnly] = useState(() => searchParams.get('stickers') === '1');
+  const [notablePatternsOnly, setNotablePatternsOnly] = useState(() => searchParams.get('patterns') === '1');
   const [page, setPage] = useState(() => Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1));
   const [selectedItem, setSelectedItem] = useState<ItemGroup | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
@@ -255,10 +258,11 @@ export function DashboardPage() {
     if (typeFilter) params.set('type', typeFilter);
     if (qualityFilter) params.set('quality', qualityFilter);
     if (stickeredOnly) params.set('stickers', '1');
+    if (notablePatternsOnly) params.set('patterns', '1');
     if (includeStorage) params.set('storage', '1');
     if (page > 1) params.set('page', String(page));
     setSearchParams(params, { replace: true });
-  }, [view, search, sort, rarityFilter, typeFilter, qualityFilter, stickeredOnly, includeStorage, page, setSearchParams]);
+  }, [view, search, sort, rarityFilter, typeFilter, qualityFilter, stickeredOnly, notablePatternsOnly, includeStorage, page, setSearchParams]);
 
   const toggleCompact = () => {
     setCompact((prev) => {
@@ -310,6 +314,9 @@ export function DashboardPage() {
     if (typeFilter) r = r.filter((i) => itemCategory(i.marketHashName) === typeFilter);
     if (qualityFilter) r = r.filter((i) => (qualityFilter === 'normal' ? i.quality === null : i.quality === qualityFilter));
     if (stickeredOnly) r = r.filter((i) => i.stickers.length > 0);
+    if (notablePatternsOnly) {
+      r = r.filter((i) => detectPatterns({ marketHashName: i.marketHashName, floatValue: i.floatValue, paintSeed: i.paintSeed }).length > 0);
+    }
     if (sort === 'name') {
       r = [...r].sort((a, b) => {
         const aName = getDisplayItemName(a.marketHashName, a.wear?.name);
@@ -321,7 +328,7 @@ export function DashboardPage() {
     else if (sort === 'float') r = [...r].sort((a, b) => (a.floatValue ?? 1) - (b.floatValue ?? 1));
     else r = [...r].sort((a, b) => b.total - a.total);
     return r;
-  }, [baseItems, view, search, sort, rarityFilter, typeFilter, qualityFilter, stickeredOnly]);
+  }, [baseItems, view, search, sort, rarityFilter, typeFilter, qualityFilter, stickeredOnly, notablePatternsOnly]);
 
   // Storage units sorted per the storage-view selector (value desc by default).
   const sortedStorageUnits = useMemo(() => {
@@ -396,6 +403,7 @@ export function DashboardPage() {
     setTypeFilter('');
     setQualityFilter('');
     setStickeredOnly(false);
+    setNotablePatternsOnly(false);
     setPage(1);
   };
 
@@ -413,7 +421,7 @@ export function DashboardPage() {
     startViewTransition.call(document, () => { flushSync(applyView); });
   };
 
-  const hasActiveFilters = search !== '' || rarityFilter !== '' || typeFilter !== '' || qualityFilter !== '' || stickeredOnly;
+  const hasActiveFilters = search !== '' || rarityFilter !== '' || typeFilter !== '' || qualityFilter !== '' || stickeredOnly || notablePatternsOnly;
 
   const totalPages = Math.ceil(filtered.length / PER_PAGE);
   // Clamp so a shrunken list (search/sort/storage toggle) never shows an empty page.
@@ -750,6 +758,15 @@ export function DashboardPage() {
                   onItemClick={setSelectedItem}
                 />
 
+                <MarketTrends
+                  source={priceSource}
+                  pp={pp}
+                  locale={locale}
+                  t={t}
+                  items={data.items}
+                  onItemClick={setSelectedItem}
+                />
+
                 <div className="flex items-center justify-between mb-4">
                   <span className={SECTION_TITLE}>{t('dashboard.topAssets')}</span>
                 </div>
@@ -861,6 +878,19 @@ export function DashboardPage() {
                     className={`h-10 px-4 rounded-xl text-xs transition-all border ${stickeredOnly ? 'bg-sf-cyan/15 text-sf-cyan border-sf-cyan/30' : 'bg-white/[0.04] text-gray-400 hover:text-white border-white/[0.06]'}`}
                   >
                     {t('filter.withStickers')}
+                  </button>
+                  <button
+                    onClick={() => { setNotablePatternsOnly(!notablePatternsOnly); setPage(1); }}
+                    aria-pressed={notablePatternsOnly}
+                    className="h-10 px-4 rounded-xl text-xs transition-all border inline-flex items-center gap-1.5"
+                    style={
+                      notablePatternsOnly
+                        ? { background: '#f0b90b26', color: '#f0b90b', borderColor: '#f0b90b4d' }
+                        : { background: 'rgba(255,255,255,0.04)', color: '#9ca3af', borderColor: 'rgba(255,255,255,0.06)' }
+                    }
+                  >
+                    <span aria-hidden="true">{'♦'}</span>
+                    {t('filter.notablePatterns')}
                   </button>
                   {hasActiveFilters && (
                     <div className="flex items-center gap-3 ml-auto">
@@ -1216,11 +1246,110 @@ function TopMovers({ steamId, source, pp, locale, t, items, onItemClick }: {
   );
 }
 
+// Market-wide trends card. Mirrors TopMovers but uses /api/trends (NOT scoped
+// to a profile). Rows are clickable only when the item is in the user's own
+// inventory — the market list may include items the user doesn't own.
+function MarketTrends({ source, pp, locale, t, items, onItemClick }: {
+  source: 'steam' | 'csfloat' | 'skinport';
+  pp: PriceProvider;
+  locale: 'fr' | 'en';
+  t: (key: TranslationKey) => string;
+  items: ItemGroup[];
+  onItemClick: (item: ItemGroup) => void;
+}) {
+  const [days, setDays] = useState<7 | 30>(7);
+  const { data, isLoading } = useTrends(source, days);
+
+  const handleRowClick = (name: string) => {
+    const item = items.find((i) => i.marketHashName === name);
+    if (item) onItemClick(item);
+  };
+
+  const renderColumn = (label: string, movers: Mover[], positive: boolean) => (
+    <div className="min-w-0">
+      <div className={`flex items-center gap-1.5 text-xs font-semibold mb-2 ${positive ? 'text-sf-green' : 'text-sf-pink'}`}>
+        {positive ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+        {label}
+      </div>
+      {movers.length > 0 ? (
+        <div className="space-y-1">
+          {movers.map((m) => {
+            const item = items.find((i) => i.marketHashName === m.name);
+            const clickable = !!item;
+            return (
+              <div
+                key={m.name}
+                role={clickable ? 'button' : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onClick={clickable ? () => handleRowClick(m.name) : undefined}
+                onKeyDown={clickable ? activationKeyDown(() => handleRowClick(m.name)) : undefined}
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg ${clickable ? 'cursor-pointer hover:bg-white/[0.04] transition-colors' : ''}`}
+              >
+                <span className="text-xs text-gray-300 truncate flex-1 min-w-0">
+                  {getDisplayItemName(m.name, item?.wear?.name)}
+                </span>
+                <span className={`font-mono text-xs shrink-0 ${positive ? 'text-sf-green' : 'text-sf-pink'}`}>
+                  {formatPercent(m.changePct)}
+                </span>
+                <span className="font-mono text-xs text-white shrink-0 w-20 text-right">
+                  {formatEur(m.newPrice, source === 'steam' ? pp : undefined)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="px-2.5 py-1.5 text-xs text-gray-600">{t('trends.none')}</div>
+      )}
+    </div>
+  );
+
+  return (
+    <section className="sf-card p-6 mb-8">
+      <div className="flex items-start justify-between gap-4 flex-wrap mb-1">
+        <span className={SECTION_TITLE}>{t('trends.title')}</span>
+        <div className="flex gap-1">
+          {([7, 30] as const).map((d) => (
+            <PillButton key={d} active={days === d} onClick={() => setDays(d)}>
+              {locale === 'fr' ? `${d}J` : `${d}D`}
+            </PillButton>
+          ))}
+        </div>
+      </div>
+      <p className="text-[11px] text-gray-500 mb-4">{t('trends.caption')}</p>
+      {isLoading || !data ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+          <div className="skeleton h-24" />
+          <div className="skeleton h-24" />
+        </div>
+      ) : data.gainers.length === 0 && data.losers.length === 0 ? (
+        <div className="py-6 text-center">
+          <Activity className="w-10 h-10 text-sf-dim mx-auto mb-3" />
+          <p className="text-sm font-semibold text-white mb-1">{t('trends.none')}</p>
+          <p className="text-xs text-gray-500">{t('trends.noneDesc')}</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
+          {renderColumn(t('movers.gainers'), data.gainers, true)}
+          {renderColumn(t('movers.losers'), data.losers, false)}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function AssetRow({ item, pp, compact = false, onClick }: { item: ItemGroup; pp: PriceProvider; compact?: boolean; onClick: () => void }) {
   const displayName = getDisplayItemName(item.marketHashName, item.wear?.name);
   const tag = weaponTag(displayName);
   // Shared P&L basis: net-of-fees in steam_fees mode, stickers included.
   const rowPnl = item.buyPrice != null ? (applyFees(item.total, pp) ?? 0) - item.buyPrice * item.quantity : null;
+  // Subtle indicator when this item has a notable (gold/cyan) rare-pattern tag.
+  const patternTags = detectPatterns({ marketHashName: item.marketHashName, floatValue: item.floatValue, paintSeed: item.paintSeed });
+  const notableTier = patternTags.find((p) => p.tier === 'gold')
+    ? 'gold'
+    : patternTags.find((p) => p.tier === 'cyan')
+      ? 'cyan'
+      : null;
 
   return (
     <div
@@ -1252,7 +1381,19 @@ function AssetRow({ item, pp, compact = false, onClick }: { item: ItemGroup; pp:
       </div>
 
       <div className="asset-cell asset-cell--name min-w-0 overflow-hidden">
-        <div className="font-semibold text-[13px] truncate text-white">{displayName}</div>
+        <div className="font-semibold text-[13px] truncate text-white">
+          {notableTier && (
+            <span
+              className="mr-1 text-[11px] align-middle"
+              style={{ color: notableTier === 'gold' ? '#f0b90b' : 'var(--accent)' }}
+              title="Pattern notable"
+              aria-hidden="true"
+            >
+              {'♦'}
+            </span>
+          )}
+          {displayName}
+        </div>
         <div className="flex items-center gap-2 mt-0.5">
           {/* The dedicated qty cell is hidden on mobile; surface quantity here instead. */}
           {item.quantity > 1 && (

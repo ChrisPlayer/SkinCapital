@@ -8,12 +8,21 @@ import {
   useCreateAlert,
   useDeleteAlert,
 } from '../../hooks/useApi.ts';
-import { useI18n, applyFees } from '../../lib/i18n.tsx';
+import { useI18n, applyFees, type TranslationKey } from '../../lib/i18n.tsx';
 import { formatEur, formatPercent } from '../../lib/formatters.ts';
 import { getDisplayItemName } from '../../lib/item-display.ts';
 import { useToast } from '../../components/toast.tsx';
 import { ExternalLink, X } from 'lucide-react';
+import { detectPatterns, type PatternTier } from '../../../shared/lib/patterns.ts';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
+
+// Tier → badge colors (brand tokens): gold, accent-cyan, pink, subtle neutral.
+const PATTERN_TIER_STYLE: Record<PatternTier, { bg: string; color: string; border: string }> = {
+  gold: { bg: '#f0b90b1f', color: '#f0b90b', border: '#f0b90b40' },
+  cyan: { bg: 'rgba(0,204,255,0.12)', color: 'var(--accent)', border: 'rgba(0,204,255,0.30)' },
+  pink: { bg: '#ff33661f', color: '#ff3366', border: '#ff336640' },
+  neutral: { bg: 'rgba(255,255,255,0.06)', color: '#d1d5db', border: 'rgba(255,255,255,0.12)' },
+};
 
 interface ItemDetailModalProps {
   item: ItemGroup | null;
@@ -137,6 +146,11 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
 
   const safeName = encodeURIComponent(item.marketHashName);
   const displayName = getDisplayItemName(item.marketHashName, item.wear?.name);
+  const patternTags = detectPatterns({
+    marketHashName: item.marketHashName,
+    floatValue: item.floatValue,
+    paintSeed: item.paintSeed,
+  });
   const links = [
     {
       label: 'Steam Market',
@@ -198,6 +212,26 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
               {item.rarity.name}
             </span>
           </div>
+
+          {/* Notable rare-pattern / finish badges (only when reliably detected) */}
+          {patternTags.length > 0 && (
+            <div className="flex items-center justify-center gap-1.5 flex-wrap -mt-3 mb-6">
+              {patternTags.map((tag, i) => {
+                const style = PATTERN_TIER_STYLE[tag.tier ?? 'neutral'];
+                return (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold px-2.5 py-1 rounded-md"
+                    style={{ background: style.bg, color: style.color, border: `1px solid ${style.border}` }}
+                  >
+                    {(tag.tier === 'gold' || tag.tier === 'cyan') && <span aria-hidden="true">{'♦'}</span>}
+                    {t(tag.key as TranslationKey)}
+                    {tag.rank && <span className="opacity-60 font-mono">{tag.rank}</span>}
+                  </span>
+                );
+              })}
+            </div>
+          )}
 
           {/* Prices by source (the 3 prices live here, not on the main view) */}
           <div className="grid grid-cols-3 gap-2 mb-3">

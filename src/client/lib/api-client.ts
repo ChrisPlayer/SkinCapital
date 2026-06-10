@@ -6,6 +6,7 @@ import type {
   PriceDetail,
   Profile,
   MoversResponse,
+  Overview,
   ApiError,
 } from '../../shared/types/api.ts';
 
@@ -52,6 +53,8 @@ export const api = {
     get: (steamId: string) => request<Profile>(`/profiles/${encodeURIComponent(steamId)}`),
   },
 
+  overview: () => request<Overview>('/overview'),
+
   dashboard: (steamId: string, days?: number, source: 'steam' | 'csfloat' | 'skinport' = 'steam') =>
     request<DashboardData>(
       `/dashboard?steamId=${encodeURIComponent(steamId)}${days ? `&days=${encodeURIComponent(days)}` : ''}&source=${source}`,
@@ -61,6 +64,9 @@ export const api = {
     request<MoversResponse>(
       `/movers?steamId=${encodeURIComponent(steamId)}&source=${source}&days=${days}`,
     ),
+
+  trends: (source: 'steam' | 'csfloat' | 'skinport' = 'steam', days: 7 | 30 = 7) =>
+    request<MoversResponse>(`/trends?source=${source}&days=${days}`),
 
   inventory: {
     refresh: () =>
@@ -146,5 +152,19 @@ export const api = {
       }),
     runScheduleNow: () =>
       request<{ ok: boolean; started: boolean }>('/settings/schedule/run', { method: 'POST' }),
+    getBackup: () =>
+      request<{
+        enabled: boolean;
+        lastBackup: { file: string; when: string; sizeBytes: number } | null;
+        count: number;
+      }>('/settings/backup'),
+    setBackup: (data: { enabled: boolean }) =>
+      request<{ ok: boolean; enabled: boolean }>('/settings/backup', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    runBackup: () =>
+      request<{ ok: boolean; ran: boolean }>('/settings/backup/run', { method: 'POST' }),
+    backupDownloadUrl: () => `${BASE}/settings/backup/download`,
   },
 };

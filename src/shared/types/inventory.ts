@@ -27,6 +27,8 @@ export interface ItemGroup {
   items: Item[];
   casketIds: string[];
   floatValue: number | null;
+  /** Paint seed of the representative unit (for rare-pattern detection). */
+  paintSeed: number | null;
   wear: WearLevel | null;
   rarity: Rarity;
   quality: 'stattrak' | 'souvenir' | null;

@@ -6,7 +6,7 @@ Tracker d'inventaire CS2 avec support Storage Units, prix multi-sources (Steam M
 
 ## 💾 Installation simple (Windows — aucune connaissance requise)
 
-➡️ **[Télécharger la dernière version](https://github.com/ChrisPlayer/Inventaire-CS2-V2/releases/latest)** (`SkinCapital-portable-win64-*.zip`)
+➡️ **[Télécharger la dernière version](https://github.com/ChrisPlayer/SkinCapital/releases/latest)** (`SkinCapital-portable-win64-*.zip`)
 
 1. Décompressez le zip où vous voulez (clic droit → *Extraire tout*)
 2. Double-cliquez sur **SkinCapital** → votre navigateur s'ouvre tout seul sur l'application

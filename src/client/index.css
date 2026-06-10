@@ -1,0 +1,332 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 240 8% 2%;
+    --foreground: 0 0% 100%;
+    --card: 228 13% 8%;
+    --card-foreground: 0 0% 100%;
+    --popover: 228 13% 8%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 192 100% 50%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 228 12% 10%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 10% 4%;
+    --muted-foreground: 212 10% 58%;
+    /* Theme accent (hex, swappable from Settings). NOTE: this replaces the old
+       unused shadcn HSL triple — nothing consumes hsl(var(--accent)). */
+    --accent: #00ccff;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 345 100% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 10% 14%;
+    --input: 220 10% 14%;
+    --ring: 192 100% 50%;
+    --radius: 0.75rem;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Render native form controls (select dropdown panels, time pickers, …) in
+     dark mode — otherwise Windows opens a WHITE option panel in which our
+     inherited white text is invisible until hovered. */
+  :root { color-scheme: dark; }
+  select option {
+    background-color: #14151c;
+    color: #ffffff;
+  }
+
+  body {
+    /* Layered ambient glows give the dark theme depth instead of a flat black.
+       The first/third radials are driven by the theme accent so switching the
+       accent in Settings re-tints the whole atmosphere. */
+    background:
+      radial-gradient(1100px 560px at 82% -12%, color-mix(in srgb, var(--accent, #00ccff) 5.5%, transparent), transparent 60%),
+      radial-gradient(900px 520px at -8% -4%, rgba(140, 60, 255, 0.04), transparent 55%),
+      radial-gradient(1400px 800px at 50% 115%, color-mix(in srgb, var(--accent, #00ccff) 2.5%, transparent), transparent 60%),
+      #050507;
+    background-attachment: fixed;
+    color: #ffffff;
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Film grain: full-viewport feTurbulence noise at ~2.5% opacity. It sits in
+     the root stacking context (pointer-events: none), subtle enough to read as
+     texture rather than dirt. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Prices/values align in columns. */
+  .font-mono { font-variant-numeric: tabular-nums; }
+
+  ::selection { background: color-mix(in srgb, var(--accent, #00ccff) 28%, transparent); color: #fff; }
+
+  :focus-visible {
+    outline: 2px solid color-mix(in srgb, var(--accent, #00ccff) 65%, transparent);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--accent, #00ccff) 35%, transparent); }
+}
+
+@layer components {
+  /* ── Cards ── */
+  .sf-card {
+    background: linear-gradient(180deg, #14151c 0%, #0f1015 100%);
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.07);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.045), 0 12px 32px -16px rgba(0,0,0,0.6);
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  }
+  .sf-card-hover:hover {
+    border-color: color-mix(in srgb, var(--accent, #00ccff) 28%, transparent);
+    background: linear-gradient(180deg, #181922 0%, #12131a 100%);
+    transform: translateY(-2px);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 18px 40px -16px rgba(0,0,0,0.7), 0 0 24px -6px color-mix(in srgb, var(--accent, #00ccff) 12%, transparent);
+  }
+
+  /* ── Glass cards (for ItemCard) ── */
+  .glass-card {
+    background: linear-gradient(180deg, #15161d 0%, #111218 100%);
+    border: 1px solid rgba(255,255,255,0.07);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.04), 0 10px 28px -14px rgba(0,0,0,0.55);
+  }
+  /* Hover lifts the card and adds a glow tinted by the item's rarity
+     (--rarity is set inline per card; falls back to a plain dark shadow). */
+  .glass-card:hover {
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.04),
+      0 12px 32px rgba(0,0,0,0.35),
+      0 8px 28px -10px color-mix(in srgb, var(--rarity, transparent) 25%, transparent);
+  }
+
+  /* ── Panels ── */
+  .sf-sidebar {
+    background: linear-gradient(180deg, #0b0b0e 0%, #09090c 100%);
+    border-right: 1px solid rgba(255,255,255,0.07);
+  }
+  .sf-feed {
+    background: linear-gradient(180deg, #0b0b0e 0%, #09090c 100%);
+    border-left: 1px solid rgba(255,255,255,0.07);
+  }
+
+  /* ── Typography ── */
+  .nav-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6b7280;
+    display: block;
+  }
+  /* Hero numbers (portfolio value) — gradient ink, display font. The second
+     stop follows the theme accent so the ink re-tints with the setting. */
+  .text-value-hero {
+    font-family: 'Space Grotesk', sans-serif;
+    background: linear-gradient(135deg, #ffffff 30%, color-mix(in srgb, var(--accent, #00ccff) 55%, #fff) 85%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* ── Navigation ── */
+  .sf-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 16px;
+    color: #9ca3af;
+    text-decoration: none;
+    border-radius: 12px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: none;
+    background: transparent;
+    width: 100%;
+    text-align: left;
+  }
+  .sf-nav-item:hover {
+    background: rgba(255,255,255,0.05);
+    color: #ffffff;
+    transform: translateX(2px);
+  }
+  .sf-nav-item.active {
+    color: var(--accent, #00ccff);
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--accent, #00ccff) 12%, transparent),
+      color-mix(in srgb, var(--accent, #00ccff) 3%, transparent)
+    );
+    box-shadow: inset 2px 0 0 var(--accent, #00ccff);
+  }
+
+  /* ── Grid overlay ── */
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent 30%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Asset rows ── */
+  .asset-row {
+    display: grid;
+    grid-template-columns: 78px 106px minmax(0, 1fr) 150px 140px;
+    align-items: center;
+    gap: 0;
+    background: linear-gradient(180deg, #121319 0%, #0f1015 100%);
+    padding: 0;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+    overflow: hidden;
+  }
+  .asset-row:hover {
+    background: linear-gradient(180deg, #171821 0%, #12131a 100%);
+    border-color: rgba(255,255,255,0.12);
+    transform: translateX(3px);
+    /* --rarity is set inline per row: hover emits a rarity-tinted glow. */
+    box-shadow:
+      0 8px 24px -12px rgba(0,0,0,0.6),
+      0 8px 28px -10px color-mix(in srgb, var(--rarity, transparent) 25%, transparent);
+  }
+  .asset-cell {
+    min-height: 88px;
+    display: flex;
+    align-items: center;
+    padding: 12px 14px;
+  }
+  .asset-cell:not(:last-child) {
+    border-right: 1px solid rgba(255,255,255,0.05);
+  }
+  .asset-cell--qty {
+    justify-content: center;
+  }
+  .asset-cell--image {
+    justify-content: center;
+  }
+  .asset-cell--name {
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  .asset-cell--price,
+  .asset-cell--total {
+    justify-content: flex-end;
+  }
+
+  /* ── Compact density variant (inventory list view) ── */
+  .asset-row--compact .asset-cell {
+    min-height: 56px;
+    padding: 6px 10px;
+  }
+  .asset-row--compact .asset-cell--image img,
+  .asset-row--compact .asset-cell--image > div {
+    width: 40px;
+    height: 40px;
+  }
+  .asset-row--compact {
+    grid-template-columns: 64px 64px minmax(0, 1fr) 130px 120px;
+  }
+
+  /* ── Section titles (shared overline style with card section titles) ── */
+  .feed-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #9ca3af;
+  }
+
+  /* ── Donut chart segments (draw-in on mount + legend hover sync) ── */
+  .donut-seg {
+    transition: stroke-dasharray 0.6s ease, stroke-width 0.2s ease, opacity 0.2s ease;
+  }
+
+  /* ── Tags ── */
+  .sf-tag {
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+  }
+
+  /* ── Skeleton shimmer (loading states) ── */
+  .skeleton {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255,255,255,0.045);
+    border-radius: 10px;
+  }
+  .skeleton::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+    animation: shimmer 1.6s infinite;
+  }
+
+  /* ── Entry animation for cards/rows (triggers on mount only) ── */
+  .fade-up { animation: fadeUp 0.3s ease both; }
+}
+
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes toastOut {
+  to { opacity: 0; transform: translateY(4px); }
+}
+
+/* ── Toast lifecycle: fade in, then fade out just before the 4000ms TTL removal ── */
+.toast-anim { animation: fadeUp 0.3s ease both, toastOut 0.25s ease 3.7s forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+  .fade-up { animation: none; }
+  .toast-anim { animation: none; }
+  .skeleton::after { animation: none; }
+  * { transition-duration: 0.01ms !important; }
+}
+
+/* ── Accent CTA glow (shared by login / profiles primary buttons) ── */
+.glow-cyan { box-shadow: 0 0 20px color-mix(in srgb, var(--accent, #00ccff) 30%, transparent); }
+
+/* ── Primary CTA driven by the theme accent (replaces hardcoded bg-sf-cyan) ── */
+.btn-accent {
+  background: var(--accent, #00ccff);
+  color: #000;
+  transition: filter 0.2s ease, opacity 0.2s ease;
+}
+.btn-accent:hover { filter: brightness(1.12); }
+
+/* ── Asset row mobile collapse: qty + total cells fold away, image shrinks ── */
+@media (max-width: 640px) {
+  .asset-row { grid-template-columns: 64px minmax(0,1fr) 110px; }
+  .asset-cell--qty, .asset-cell--total { display: none; }
+  .asset-cell { min-height: 64px; padding: 8px 10px; }
+}

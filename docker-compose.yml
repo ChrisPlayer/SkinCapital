@@ -1,0 +1,19 @@
+services:
+  skincapital:
+    image: ghcr.io/chrisplayer/inventaire-cs2-v2:latest
+    container_name: skincapital
+    ports:
+      - '3000:3000'
+    volumes:
+      - skincapital-data:/data
+    environment:
+      # Anti-CSRF: les requêtes d'écriture sont refusées si leur Origin n'est
+      # pas listée ici. Ajoutez l'URL par laquelle vous accédez à l'application
+      # (ex: http://192.168.1.10:3000 ou https://skins.mondomaine.fr).
+      ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      # Derrière un reverse proxy HTTPS, activez le cookie sécurisé :
+      # COOKIE_SECURE: 'true'
+    restart: unless-stopped
+
+volumes:
+  skincapital-data:

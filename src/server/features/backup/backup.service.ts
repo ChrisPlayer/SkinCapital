@@ -2,12 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { getSqlite } from '../../db/client.ts';
 import { logger } from '../../lib/logger.ts';
+import { DATA_DIR } from '../../lib/paths.ts';
 
 // Anti data-loss: a timestamped JSON dump of the user-meaningful tables. The
 // full prices time-series is deliberately excluded (too big); only the LATEST
 // price per (name, source) is kept so a restore still has something to show
 // until the next refresh. We keep the last N files and prune the rest.
-const BACKUP_DIR = path.join(process.cwd(), 'data', 'backups');
+const BACKUP_DIR = path.join(DATA_DIR, 'backups');
 const MAX_BACKUPS = 14;
 const FILE_PREFIX = 'backup-';
 const FILE_SUFFIX = '.json';

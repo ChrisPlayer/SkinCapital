@@ -8,7 +8,7 @@ Tracker d'inventaire CS2 avec support Storage Units, prix multi-sources (Steam M
 
 ### Windows
 
-➡️ **[Télécharger la dernière version](https://github.com/ChrisPlayer/Inventaire-CS2-V2/releases/latest)** (`SkinCapital-win-x64-v*.zip`)
+➡️ **[Télécharger la dernière version](https://github.com/ChrisPlayer/SkinCapital/releases/latest)** (`SkinCapital-win-x64-v*.zip`)
 
 1. Décompressez le zip où vous voulez (clic droit → *Extraire tout*)
 2. Double-cliquez sur **SkinCapital.exe** : une fenêtre s'ouvre avec les journaux du serveur, puis votre navigateur s'ouvre tout seul sur l'application
@@ -24,7 +24,7 @@ Image publiée sur GitHub Container Registry à chaque release :
 docker run -d --name skincapital \
   -p 3000:3000 \
   -v skincapital-data:/data \
-  ghcr.io/chrisplayer/inventaire-cs2-v2:latest
+  ghcr.io/chrisplayer/skincapital:latest
 ```
 
 Ou avec le [`docker-compose.yml`](docker-compose.yml) fourni : `docker compose up -d`. L'application écoute sur `http://localhost:3000` ; si vous y accédez par une autre URL (IP LAN, domaine), ajoutez-la à `ALLOWED_ORIGINS` (anti-CSRF) et passez derrière HTTPS avant d'exposer le login Steam hors de la machine.
@@ -104,7 +104,7 @@ Toutes les variables de tuning fin (workers, timeouts, cooldowns, vérification 
 Pousser un tag `v*` déclenche le workflow [release.yml](.github/workflows/release.yml) :
 le zip Windows (exe Node SEA) est construit et attaché à la GitHub Release avec
 des notes générées, et l'image Docker multi-arch est poussée sur
-`ghcr.io/chrisplayer/inventaire-cs2-v2` (tags `latest`, `X.Y.Z`, `X.Y`).
+`ghcr.io/chrisplayer/skincapital` (tags `latest`, `X.Y.Z`, `X.Y`).
 
 ```bash
 npm version minor        # bump + tag vX.Y.Z

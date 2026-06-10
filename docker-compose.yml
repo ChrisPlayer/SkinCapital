@@ -1,6 +1,6 @@
 services:
   skincapital:
-    image: ghcr.io/chrisplayer/inventaire-cs2-v2:latest
+    image: ghcr.io/chrisplayer/skincapital:latest
     container_name: skincapital
     ports:
       - '3000:3000'

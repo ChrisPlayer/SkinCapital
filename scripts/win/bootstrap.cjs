@@ -32,6 +32,9 @@ process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.DATA_DIR = process.env.DATA_DIR || path.join(exeDir, 'data');
 process.env.CLIENT_DIST = process.env.CLIENT_DIST || path.join(exeDir, 'app', 'public');
 process.env.OPEN_BROWSER = process.env.OPEN_BROWSER || '1';
+// Tee the console logs to disk: if the window closes on a crash, the user
+// still has data/server.log to report.
+process.env.LOG_FILE = process.env.LOG_FILE || path.join(process.env.DATA_DIR, 'server.log');
 
 // SEA code can only require() builtins; load the on-disk bundle through a
 // require anchored in app/ so its own external requires resolve from

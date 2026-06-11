@@ -83,6 +83,7 @@ Sans `SESSION_SECRET` dans le `.env`, le serveur en génère un au premier déma
 | `CSFLOAT_API_KEY` | Clé API CSFloat (requise en pratique, sinon `403`) | - |
 | `NODE_ENV` | `development` ou `production` | `development` |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
+| `LOG_FILE` | Copie aussi les logs dans ce fichier (rotation à 5 Mo). Le pack Windows le pose sur `data\server.log` | off |
 
 Toutes les variables de tuning fin (workers, timeouts, cooldowns, vérification des proxies, cadence CSFloat...) sont documentées dans [`.env.example`](.env.example).
 

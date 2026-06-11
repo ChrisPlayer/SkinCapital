@@ -10,7 +10,7 @@ $version = $pkg.version
 
 $nodeVersion = (& node --version)
 if ($nodeVersion -notmatch '^v22\.') {
-  throw "Node 22 requis pour le packaging (trouve: $nodeVersion) - le SEA embarque CE node.exe"
+  throw "Node 22 required for packaging (found: $nodeVersion) - the SEA embeds THIS node.exe"
 }
 
 $stage = Join-Path $repo 'release\.stage-win'
@@ -18,21 +18,21 @@ $packRoot = Join-Path $stage 'SkinCapital'
 if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
 New-Item -ItemType Directory -Path (Join-Path $packRoot 'app') -Force | Out-Null
 
-Write-Host '[1/5] Build (client vite + bundle serveur esbuild)...'
+Write-Host '[1/5] Build (vite client + esbuild server bundle)...'
 Push-Location $repo
 try {
   npm run build | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'npm run build a echoue' }
+  if ($LASTEXITCODE -ne 0) { throw 'npm run build failed' }
 } finally { Pop-Location }
 Copy-Item (Join-Path $repo 'dist\server\server.cjs') (Join-Path $packRoot 'app\server.cjs')
 Copy-Item (Join-Path $repo 'dist\client') (Join-Path $packRoot 'app\public') -Recurse
 
-Write-Host '[2/5] Dependances runtime (better-sqlite3 + stack Steam)...'
+Write-Host '[2/5] Runtime dependencies (better-sqlite3 + Steam stack)...'
 node (Join-Path $repo 'scripts\gen-runtime-package.mjs') (Join-Path $packRoot 'app')
 Push-Location (Join-Path $packRoot 'app')
 try {
   npm install --omit=dev --no-audit --no-fund --no-bin-links | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw 'npm install (runtime) a echoue' }
+  if ($LASTEXITCODE -ne 0) { throw 'npm install (runtime) failed' }
   Remove-Item package.json, package-lock.json -ErrorAction SilentlyContinue
 } finally { Pop-Location }
 
@@ -48,17 +48,17 @@ $seaJson = @{
 # Set-Content -Encoding utf8 would emit a BOM that breaks the SEA config parser.
 [IO.File]::WriteAllText($seaConfig, $seaJson)
 node --experimental-sea-config $seaConfig
-if ($LASTEXITCODE -ne 0) { throw 'generation du blob SEA a echoue' }
+if ($LASTEXITCODE -ne 0) { throw 'SEA blob generation failed' }
 $exePath = Join-Path $packRoot 'SkinCapital.exe'
 Copy-Item (Get-Command node).Source $exePath
 npx postject $exePath NODE_SEA_BLOB $seaBlob `
   --sentinel-fuse NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2
-if ($LASTEXITCODE -ne 0) { throw 'postject a echoue' }
+if ($LASTEXITCODE -ne 0) { throw 'postject failed' }
 
-Write-Host '[4/5] LISEZMOI...'
-Copy-Item (Join-Path $repo 'scripts\win\LISEZMOI.txt') (Join-Path $packRoot 'LISEZMOI.txt')
+Write-Host '[4/5] README...'
+Copy-Item (Join-Path $repo 'scripts\win\README.txt') (Join-Path $packRoot 'README.txt')
 
-Write-Host '[5/5] Zip final...'
+Write-Host '[5/5] Final zip...'
 $releaseDir = Join-Path $repo 'release'
 $zipPath = Join-Path $releaseDir "SkinCapital-win-x64-v$version.zip"
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }

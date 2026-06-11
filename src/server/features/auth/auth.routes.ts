@@ -114,7 +114,7 @@ router.post('/login', authLimiter, async (req, res) => {
     if (message.includes('InvalidPassword')) errorMsg = 'Invalid password';
     else if (message.includes('RateLimitExceeded')) errorMsg = 'Too many attempts, try later';
     else if (message.includes('LoggedInElsewhere'))
-      errorMsg = 'Steam est ouvert ailleurs — ferme Steam/CS2 sur ton PC puis réessaie';
+      errorMsg = 'Steam is open elsewhere — close Steam/CS2 on your PC and try again';
 
     res.status(401).json({ error: errorMsg });
   }
@@ -145,8 +145,8 @@ router.post('/steamguard', authLimiter, async (req, res) => {
     logger.error('[Auth] Steam Guard failed:', message);
     let errorMsg = 'Invalid Steam Guard code';
     if (message.includes('LoggedInElsewhere'))
-      errorMsg = 'Steam est ouvert ailleurs — ferme Steam/CS2 sur ton PC puis réessaie';
-    else if (message.includes('timeout')) errorMsg = 'Steam Guard timeout — réessaie le code';
+      errorMsg = 'Steam is open elsewhere — close Steam/CS2 on your PC and try again';
+    else if (message.includes('timeout')) errorMsg = 'Steam Guard timeout — try the code again';
     res.status(401).json({ error: errorMsg });
   }
 });

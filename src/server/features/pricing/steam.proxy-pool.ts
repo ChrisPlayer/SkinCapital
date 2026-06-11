@@ -216,7 +216,7 @@ export async function testProxy(raw: string): Promise<{ ok: boolean; ip?: string
     return { ok: true, ip: (res.data as { ip?: string })?.ip };
   } catch (err) {
     const e = err as { response?: { status?: number }; message?: string };
-    return { ok: false, error: e.response?.status ? `HTTP ${e.response.status}` : e.message || 'échec' };
+    return { ok: false, error: e.response?.status ? `HTTP ${e.response.status}` : e.message || 'failed' };
   }
 }
 

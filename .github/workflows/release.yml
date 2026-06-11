@@ -23,6 +23,7 @@ jobs:
       - name: Publish release with Windows asset
         uses: softprops/action-gh-release@v2
         with:
+          name: SkinCapital ${{ github.ref_name }}
           files: release/SkinCapital-win-x64-v*.zip
           generate_release_notes: true
 

@@ -60,7 +60,7 @@ router.get('/export/csv', requireAuth, (req, res) => {
     }
 
     const csv = rows.join('\n');
-    const filename = `cs2-inventory-${steamId}-${new Date().toISOString().split('T')[0]}.csv`;
+    const filename = `skincapital-${steamId}-${new Date().toISOString().split('T')[0]}.csv`;
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);

@@ -1,4 +1,4 @@
-# CS2 Inventory Tracker v2
+# SkinCapital
 
 CS2 inventory tracker with Storage Units support, multi-source pricing (Steam Market / CSFloat / Skinport) and value history.
 

@@ -1,7 +1,8 @@
 import { Router } from 'express';
-import { getItemsByProfile } from '../../db/queries/items.ts';
+import { getItemsByProfile, getAllItems } from '../../db/queries/items.ts';
 import { getCachedPrices } from '../pricing/pricing.service.ts';
 import { requireAuth } from '../auth/auth.middleware.ts';
+import { isAllProfiles } from '../../../shared/constants/profiles.ts';
 
 const router = Router();
 
@@ -16,11 +17,12 @@ router.get('/export/csv', requireAuth, (req, res) => {
     if (!ownerSteamId) {
       return res.status(400).json({ error: 'No authenticated session' });
     }
-    if (ownerSteamId !== steamId) {
+    // 'all' is allowed for any authenticated session (LAN/personal tool).
+    if (!isAllProfiles(steamId) && ownerSteamId !== steamId) {
       return res.status(403).json({ error: 'Forbidden: you can only export your own profile' });
     }
 
-    const items = getItemsByProfile(steamId);
+    const items = isAllProfiles(steamId) ? getAllItems() : getItemsByProfile(steamId);
     const headers = ['Item', 'Qty', 'Storage Unit', 'Float', 'Steam Price EUR', 'Total EUR'];
 
     const grouped: Record<string, {

@@ -160,6 +160,13 @@ export interface MoverRow {
  */
 export function getPriceMovers(steamId: string, source: string, days: number): MoverRow[] {
   const sqlite = getSqlite();
+  // Aggregated view: cover every OWNED item across all profiles (still not
+  // getMarketMovers, which also includes non-owned tracked names).
+  const aggregate = steamId === 'all';
+  const ownedFilter = aggregate
+    ? 'AND p.market_hash_name IN (SELECT DISTINCT market_hash_name FROM items)'
+    : 'AND p.market_hash_name IN (SELECT DISTINCT market_hash_name FROM items WHERE steam_id = ?)';
+  const params: string[] = aggregate ? [source, days.toString()] : [source, days.toString(), steamId];
   return sqlite
     .prepare(
       `WITH windowed AS (
@@ -170,7 +177,7 @@ export function getPriceMovers(steamId: string, source: string, days: number): M
          WHERE p.source = ?
            AND p.price_eur IS NOT NULL
            AND p.timestamp > datetime('now', '-' || ? || ' days')
-           AND p.market_hash_name IN (SELECT DISTINCT market_hash_name FROM items WHERE steam_id = ?)
+           ${ownedFilter}
        )
        SELECT o.market_hash_name AS name, o.price_eur AS oldPrice, n.price_eur AS newPrice
        FROM windowed o
@@ -178,7 +185,7 @@ export function getPriceMovers(steamId: string, source: string, days: number): M
          ON n.market_hash_name = o.market_hash_name AND n.rn_desc = 1
        WHERE o.rn_asc = 1 AND o.rn_desc > 1`,
     )
-    .all(source, days.toString(), steamId) as MoverRow[];
+    .all(...params) as MoverRow[];
 }
 
 /**

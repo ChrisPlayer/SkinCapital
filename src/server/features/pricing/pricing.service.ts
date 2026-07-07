@@ -19,6 +19,7 @@ import {
 export { getPricingMode } from './steam.proxy-pool.ts';
 import { insertPrice, getCachedPriceRows } from '../../db/queries/prices.ts';
 import { getActiveAlertsByName, markTriggered } from '../../db/queries/alerts.ts';
+import { pushEvent } from '../../lib/events.ts';
 import { logger } from '../../lib/logger.ts';
 import type { Price } from '../../../shared/types/inventory.ts';
 
@@ -735,6 +736,14 @@ function checkPriceAlerts(marketHashName: string, freshPrice: number) {
       (alert.direction === 'above' && freshPrice >= alert.threshold_eur);
     if (crossed) {
       markTriggered(alert.id);
+      pushEvent('alert_triggered', {
+        alertId: alert.id,
+        steamId: alert.steam_id,
+        marketHashName,
+        direction: alert.direction,
+        thresholdEur: alert.threshold_eur,
+        freshPrice,
+      });
       logger.info(
         `[Price] Custom alert #${alert.id} triggered: ${marketHashName} ${alert.direction} €${alert.threshold_eur.toFixed(2)} (fresh €${freshPrice.toFixed(2)})`,
       );

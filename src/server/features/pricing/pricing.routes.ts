@@ -2,7 +2,9 @@ import { Router } from 'express';
 import { getCachedPrices } from './pricing.service.ts';
 import { getItem24hChange } from '../history/history.service.ts';
 import { getItemPriceHistory } from '../../db/queries/history.ts';
-import { getPriceMovers, getMarketMovers } from '../../db/queries/prices.ts';
+import { getPriceMovers, getMarketMovers, getAllLatestPricesBySource } from '../../db/queries/prices.ts';
+import { getItemsByProfile, getAllItems } from '../../db/queries/items.ts';
+import { isAllProfiles } from '../../../shared/constants/profiles.ts';
 
 const router = Router();
 
@@ -73,6 +75,53 @@ router.get('/trends', (req, res) => {
     res.json({ days, gainers, losers });
   } catch {
     res.status(500).json({ error: 'Failed to compute trends' });
+  }
+});
+
+// Latest price per source for every owned item (feeds the comparator table).
+// MUST stay registered before /prices/:marketHashName or "compare" would be
+// captured as an item name.
+router.get('/prices/compare', (req, res) => {
+  try {
+    const steamId = req.query.steamId as string;
+    if (!steamId) {
+      return res.status(400).json({ error: 'steamId query parameter required' });
+    }
+    const rawItems = isAllProfiles(steamId) ? getAllItems() : getItemsByProfile(steamId);
+
+    const priceBySource: Record<'steam' | 'csfloat' | 'skinport', Map<string, number | null>> = {
+      steam: new Map(getAllLatestPricesBySource('steam').map((p) => [p.market_hash_name, p.price_eur])),
+      csfloat: new Map(getAllLatestPricesBySource('csfloat').map((p) => [p.market_hash_name, p.price_eur])),
+      skinport: new Map(getAllLatestPricesBySource('skinport').map((p) => [p.market_hash_name, p.price_eur])),
+    };
+
+    const byName = new Map<string, { quantity: number; iconUrl: string | null }>();
+    for (const item of rawItems) {
+      const entry = byName.get(item.marketHashName);
+      if (entry) {
+        entry.quantity += 1;
+        if (!entry.iconUrl && item.iconUrl) entry.iconUrl = item.iconUrl;
+      } else {
+        byName.set(item.marketHashName, { quantity: 1, iconUrl: item.iconUrl });
+      }
+    }
+
+    const rows = [...byName.entries()].map(([name, info]) => ({
+      marketHashName: name,
+      quantity: info.quantity,
+      imageUrl: info.iconUrl
+        ? `https://community.akamai.steamstatic.com/economy/image/${info.iconUrl}/200fx200f`
+        : null,
+      prices: {
+        steam: priceBySource.steam.get(name) ?? null,
+        csfloat: priceBySource.csfloat.get(name) ?? null,
+        skinport: priceBySource.skinport.get(name) ?? null,
+      },
+    }));
+
+    res.json(rows);
+  } catch {
+    res.status(500).json({ error: 'Failed to compute price comparison' });
   }
 });
 

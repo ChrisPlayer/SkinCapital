@@ -14,6 +14,8 @@ import {
   isBackupEnabled,
   setBackupEnabled,
   runDailyBackup,
+  getTrackedSources,
+  setTrackedSources,
 } from '../inventory/inventory.jobs.ts';
 import {
   getLatestBackup,
@@ -52,6 +54,24 @@ router.post('/settings/schedule', (req, res) => {
 router.post('/settings/schedule/run', (_req, res) => {
   const started = runDailyPriceRefresh();
   res.status(202).json({ ok: true, started });
+});
+
+// ── Tracked price sources (daily reload + comparator gating) ──
+
+router.get('/settings/sources', (_req, res) => {
+  res.json({ sources: getTrackedSources() });
+});
+
+const sourcesSchema = z.object({
+  sources: z.array(z.enum(['steam', 'csfloat', 'skinport'])).max(3),
+});
+
+router.post('/settings/sources', (req, res) => {
+  const parsed = sourcesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'sources (array of steam|csfloat|skinport) required' });
+  }
+  res.json({ ok: true, sources: setTrackedSources(parsed.data.sources) });
 });
 
 // ── Automatic backup (anti data-loss) ──

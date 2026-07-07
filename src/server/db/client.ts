@@ -142,6 +142,19 @@ export function initDb() {
     )
   `);
 
+  // Inventory movements: per-item quantity deltas detected between two
+  // inventory refreshes (feeds the Activity tab's "movements" section)
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS inventory_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      steam_id TEXT NOT NULL,
+      market_hash_name TEXT NOT NULL,
+      delta INTEGER NOT NULL,
+      price_eur REAL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
   // Custom price-threshold alerts (triggered when a fresh steam price crosses)
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS price_alerts (
@@ -165,6 +178,7 @@ export function initDb() {
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp)');
   // Alert trigger checks look up active alerts by item name on every fresh price.
   sqlite.exec('CREATE INDEX IF NOT EXISTS idx_price_alerts_name ON price_alerts(market_hash_name)');
+  sqlite.exec('CREATE INDEX IF NOT EXISTS idx_inventory_events_steam_id ON inventory_events(steam_id, created_at)');
   // One snapshot per (profile, source, day) — replaces the old (profile, day) key.
   sqlite.exec('DROP INDEX IF EXISTS idx_history_steam_date');
   sqlite.exec(
@@ -182,6 +196,7 @@ export function cleanupOldData() {
   const sql = getSqlite();
   sql.exec(`DELETE FROM history WHERE timestamp < date('now', '-90 days')`);
   sql.exec(`DELETE FROM prices WHERE timestamp < datetime('now', '-30 days')`);
+  sql.exec(`DELETE FROM inventory_events WHERE created_at < datetime('now', '-90 days')`);
 }
 
 export function closeDb() {

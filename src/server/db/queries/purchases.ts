@@ -20,6 +20,24 @@ export function getPurchasesByProfile(steamId: string): Map<string, number> {
   return map;
 }
 
+/** All purchase prices, keyed steamId -> (market_hash_name -> buy price). */
+export function getAllPurchases(): Map<string, Map<string, number>> {
+  const sqlite = getSqlite();
+  const rows = sqlite
+    .prepare('SELECT steam_id, market_hash_name, buy_price_eur FROM purchases')
+    .all() as Array<Pick<PurchaseRow, 'steam_id' | 'market_hash_name' | 'buy_price_eur'>>;
+  const byProfile = new Map<string, Map<string, number>>();
+  for (const row of rows) {
+    let inner = byProfile.get(row.steam_id);
+    if (!inner) {
+      inner = new Map<string, number>();
+      byProfile.set(row.steam_id, inner);
+    }
+    inner.set(row.market_hash_name, row.buy_price_eur);
+  }
+  return byProfile;
+}
+
 export function setPurchase(steamId: string, marketHashName: string, buyPriceEur: number): void {
   const sqlite = getSqlite();
   sqlite

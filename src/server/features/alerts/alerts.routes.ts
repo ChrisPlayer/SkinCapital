@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { listAlerts, createAlert, deleteAlert, type PriceAlertRow } from '../../db/queries/alerts.ts';
+import { listAlerts, listAllAlerts, createAlert, deleteAlert, type PriceAlertRow } from '../../db/queries/alerts.ts';
 import { getCachedPrices } from '../pricing/pricing.service.ts';
+import { isAllProfiles } from '../../../shared/constants/profiles.ts';
 import type { PriceAlert } from '../../../shared/types/api.ts';
 
 const router = Router();
@@ -28,7 +29,7 @@ router.get('/alerts', (req, res) => {
   if (!steamId) {
     return res.status(400).json({ error: 'steamId query parameter required' });
   }
-  res.json(listAlerts(steamId).map(rowToAlert));
+  res.json((isAllProfiles(steamId) ? listAllAlerts() : listAlerts(steamId)).map(rowToAlert));
 });
 
 const createAlertSchema = z.object({
@@ -45,6 +46,9 @@ router.post('/alerts', (req, res) => {
   }
 
   const { steamId, marketHashName, direction, thresholdEur } = parsed.data;
+  if (isAllProfiles(steamId)) {
+    return res.status(400).json({ error: 'Alerts are per-profile; pick a specific account' });
+  }
   const row = createAlert(steamId, marketHashName, direction, thresholdEur);
   res.status(201).json(rowToAlert(row));
 });

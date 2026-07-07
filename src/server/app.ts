@@ -13,6 +13,7 @@ import profilesRoutes from './features/profiles/profiles.routes.ts';
 import settingsRoutes from './features/settings/settings.routes.ts';
 import purchasesRoutes from './features/purchases/purchases.routes.ts';
 import alertsRoutes from './features/alerts/alerts.routes.ts';
+import eventsRoutes from './features/events/events.routes.ts';
 
 export function createApp() {
   const app = express();
@@ -41,6 +42,7 @@ export function createApp() {
   app.use('/api', settingsRoutes);
   app.use('/api', purchasesRoutes);
   app.use('/api', alertsRoutes);
+  app.use('/api', eventsRoutes);
 
   // API 404 for unmatched /api routes
   app.use('/api', (_req, res) => {

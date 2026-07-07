@@ -18,6 +18,37 @@ export function getHistory(steamId: string, days: number = 30, source = 'steam')
     .all(steamId, source, days.toString()) as HistoryRow[];
 }
 
+/**
+ * Aggregated portfolio history across ALL profiles (SUM per day). Days where a
+ * profile has no snapshot simply contribute nothing — the curve can dip on
+ * partially-covered days. The `steam_id != 'all'` guard is defence in depth:
+ * the aggregate must never be persisted, but if a stray row ever landed it
+ * would double-count everything.
+ */
+export function getAggregatedHistory(days: number = 30, source = 'steam'): HistoryRow[] {
+  const sqlite = getSqlite();
+  return sqlite
+    .prepare(
+      `SELECT SUM(total_value) AS total_value, SUM(item_count) AS item_count, timestamp FROM history
+       WHERE source = ? AND steam_id != 'all'
+       AND timestamp > date('now', '-' || ? || ' days', 'localtime')
+       GROUP BY timestamp
+       ORDER BY timestamp ASC`,
+    )
+    .all(source, days.toString()) as HistoryRow[];
+}
+
+export function getAggregatedYesterdayValue(source = 'steam'): { total_value: number } | undefined {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .prepare(
+      `SELECT SUM(total_value) AS total_value FROM history
+       WHERE source = ? AND steam_id != 'all' AND timestamp = date('now', '-1 day', 'localtime')`,
+    )
+    .get(source) as { total_value: number | null } | undefined;
+  return row && row.total_value !== null ? { total_value: row.total_value } : undefined;
+}
+
 // Snapshots are keyed by LOCAL day (not UTC) so the "yesterday" comparison
 // doesn't skew around midnight for non-UTC users.
 export function saveSnapshot(steamId: string, totalValue: number, itemCount: number, source = 'steam') {

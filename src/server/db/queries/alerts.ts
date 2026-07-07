@@ -17,6 +17,14 @@ export function listAlerts(steamId: string): PriceAlertRow[] {
     .all(steamId) as PriceAlertRow[];
 }
 
+/** Union across every profile (aggregated view). */
+export function listAllAlerts(): PriceAlertRow[] {
+  const sqlite = getSqlite();
+  return sqlite
+    .prepare('SELECT * FROM price_alerts ORDER BY created_at DESC, id DESC')
+    .all() as PriceAlertRow[];
+}
+
 export function createAlert(
   steamId: string,
   marketHashName: string,

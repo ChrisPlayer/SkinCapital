@@ -4,6 +4,7 @@ import { steamClient } from '../steam/steam.client.ts';
 import { refresh, refreshPrices } from '../inventory/inventory.service.ts';
 import { authLimiter } from '../../middleware/security.ts';
 import { upsertProfile } from '../../db/queries/profiles.ts';
+import { pushEvent } from '../../lib/events.ts';
 import { logger } from '../../lib/logger.ts';
 import type { Profile } from '../../../shared/types/api.ts';
 
@@ -59,6 +60,7 @@ async function finalizeLogin(
 
   if (!alreadyFinalized) {
     logger.info('[Auth] Login successful');
+    pushEvent('logged_in', { steamId, personaName: personaInfo?.personaName ?? null });
     refreshPrices(steamId, 'steam', 'missing').catch((err) => {
       logger.error('[Auth] Missing prices check error:', (err as Error).message);
     });

@@ -68,12 +68,84 @@ export interface ChangeInfo {
   yesterdayValue?: number;
 }
 
+/** What the Steam client / refresh pipeline is doing right now. */
+export type SteamPhase =
+  | 'idle'
+  | 'logging_in'
+  | 'awaiting_steam_guard'
+  | 'launching_cs2'
+  | 'connected'
+  | 'fetching_inventory'
+  | 'fetching_storage'
+  | 'fetching_prices'
+  | 'disconnecting';
+
+export interface SteamPhaseDetail {
+  loadedUnits?: number;
+  totalUnits?: number;
+  waitingForGC?: boolean;
+}
+
+export interface SteamStatusInfo {
+  phase: SteamPhase;
+  phaseSince: string;
+  phaseDetail: SteamPhaseDetail | null;
+  /** Account the phase applies to (survives the mid-refresh Steam logout). */
+  steamId: string | null;
+  profile: { username: string; personaName: string | null; avatarUrl: string | null } | null;
+  isLoggedIn: boolean;
+  isConnectedToGC: boolean;
+}
+
+export interface LastRefreshResult {
+  success: boolean;
+  itemCount?: number;
+  totalValue?: number;
+  error?: string;
+  finishedAt: string;
+}
+
 export interface InventoryStatus {
   isRefreshing: boolean;
   syncType: 'inventory' | 'prices' | null;
   source: 'steam' | 'csfloat' | 'skinport' | null;
   lastRefresh: string | null;
   progress: RefreshProgress | null;
+  steam: SteamStatusInfo;
+  lastRefreshResult: LastRefreshResult | null;
+}
+
+export type AppEventType =
+  | 'phase_changed'
+  | 'refresh_completed'
+  | 'refresh_failed'
+  | 'price_refresh_completed'
+  | 'alert_triggered'
+  | 'logged_in'
+  | 'logged_out'
+  | 'inventory_changed';
+
+export interface AppEvent {
+  seq: number;
+  type: AppEventType;
+  at: string;
+  payload: Record<string, unknown>;
+}
+
+export interface EventsResponse {
+  bootId: string;
+  lastSeq: number;
+  events: AppEvent[];
+}
+
+export interface InventoryMovement {
+  id: number;
+  steamId: string;
+  marketHashName: string;
+  /** Positive = items gained, negative = items removed. */
+  delta: number;
+  priceEur: number | null;
+  createdAt: string;
 }
 
 export interface RefreshProgress {

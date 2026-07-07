@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { setPurchase, deletePurchase } from '../../db/queries/purchases.ts';
+import { isAllProfiles } from '../../../shared/constants/profiles.ts';
 
 const router = Router();
 
@@ -22,6 +23,9 @@ router.put('/purchases', (req, res) => {
   }
 
   const { steamId, marketHashName, buyPriceEur } = parsed.data;
+  if (isAllProfiles(steamId)) {
+    return res.status(400).json({ error: 'Purchases are per-profile; pick a specific account' });
+  }
   if (buyPriceEur === null || buyPriceEur === 0) {
     deletePurchase(steamId, marketHashName);
   } else {
@@ -35,6 +39,9 @@ router.delete('/purchases', (req, res) => {
   const marketHashName = req.query.marketHashName as string;
   if (!steamId || !marketHashName) {
     return res.status(400).json({ error: 'steamId and marketHashName query parameters required' });
+  }
+  if (isAllProfiles(steamId)) {
+    return res.status(400).json({ error: 'Purchases are per-profile; pick a specific account' });
   }
   deletePurchase(steamId, marketHashName);
   res.json({ ok: true });

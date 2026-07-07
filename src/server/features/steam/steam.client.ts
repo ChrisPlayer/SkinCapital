@@ -3,6 +3,8 @@ import SteamCommunity from 'steamcommunity';
 import GlobalOffensive from 'globaloffensive';
 import { LoginSession, EAuthTokenPlatformType, EAuthSessionGuardType } from 'steam-session';
 import { logger } from '../../lib/logger.ts';
+import { pushEvent } from '../../lib/events.ts';
+import { setPhase, getPhaseState } from './steam.status.ts';
 
 let steamUser: SteamUser | null = null;
 let community: SteamCommunity | null = null;
@@ -106,6 +108,10 @@ function setupEventHandlers() {
   steamUser.on('loggedOn', () => {
     logger.info('[Steam] Successfully logged on to Steam');
     _isLoggedIn = true;
+    setPhase(_suppressGamesPlayed ? 'connected' : 'launching_cs2', {
+      owner: 'steam',
+      steamId: steamUser?.steamID?.getSteamID64() ?? null,
+    });
     // The guard step (typed code or mobile approval) is over: stop reporting
     // isAwaitingSteamGuard, disarm the abandon timer, and drop the steam-session
     // object (and with it the refresh token) from memory.
@@ -122,6 +128,11 @@ function setupEventHandlers() {
   steamUser.on('error', (err: Error) => {
     logger.error('[Steam] Login error:', err.message);
     _isLoggedIn = false;
+    // The LoggedInElsewhere relog path below keeps the session alive — only a
+    // truly fatal error drops the phase back to idle.
+    if (!(/LoggedInElsewhere/i.test(err.message) && _refreshToken && _relogAttempts < MAX_RELOG_ATTEMPTS)) {
+      setPhase('idle', { owner: 'steam' });
+    }
     // Steam open on the user's PC kicks us ~0.5s after logon (LoggedInElsewhere),
     // faster than the client's /auth/poll can observe the logged-in state. We
     // still hold the refresh token in memory — take the session back (bounded,
@@ -149,6 +160,7 @@ function setupEventHandlers() {
     logger.info('[Steam] Disconnected:', msg);
     _isLoggedIn = false;
     _isConnectedToGC = false;
+    setPhase('idle', { owner: 'steam' });
   });
 
   steamUser.on('webSession', (_sessionId: string, cookies: string[]) => {
@@ -159,6 +171,11 @@ function setupEventHandlers() {
   csgoClient.on('connectedToGC', () => {
     logger.info('[CS2] Connected to Game Coordinator');
     _isConnectedToGC = true;
+    // Only settle into 'connected' from the CS2 startup phase — never downgrade
+    // a fetching_* phase owned by a running refresh.
+    if (getPhaseState().phase === 'launching_cs2') {
+      setPhase('connected', { owner: 'steam' });
+    }
   });
 
   csgoClient.on('disconnectedFromGC', (reason: number) => {
@@ -181,6 +198,7 @@ function login(username: string, password: string): Promise<LoginOutcome> {
     init();
     _loginInProgress = true;
     logger.info('[Steam] Attempting login...');
+    setPhase('logging_in', { owner: 'steam' });
 
     let settled = false;
     // 30s cap for the no-guard path (credentials → authenticated → token logon).
@@ -240,6 +258,7 @@ function login(username: string, password: string): Promise<LoginOutcome> {
       // the 1-3s window between phone approval and the token logon completing.
       clearGuardAbandonTimer();
       _steamGuardCallback = null;
+      setPhase('logging_in', { owner: 'steam' });
       // Phase 2: hand steam-user the refresh token. SECURITY: the token only
       // ever lives on the in-memory session object — never logged, never stored.
       logger.info('[Steam] Credentials authenticated — completing logon with refresh token');
@@ -309,6 +328,7 @@ function login(username: string, password: string): Promise<LoginOutcome> {
         };
         logger.info(`[Steam] Steam Guard required (mobile approval ${canConfirmMobile ? 'available' : 'unavailable'})`);
         armGuardAbandonTimer();
+        setPhase('awaiting_steam_guard', { owner: 'steam' });
         done({ status: 'steamguard', canConfirmMobile });
       })
       .catch((err: Error) => fail(err));
@@ -410,6 +430,7 @@ function getPersonaInfo(steamId64: string): Promise<{ personaName: string; avata
 }
 
 function logout() {
+  const wasLoggedIn = _isLoggedIn;
   // Also abort any pending steam-session login attempt (mobile approval still
   // polling, guard code never submitted, …) and drop the token from memory.
   discardLoginSession();
@@ -426,6 +447,11 @@ function logout() {
     _loginInProgress = false;
     clearGuardAbandonTimer();
     logger.info('[Steam] Logged out');
+  }
+  // No-op while a refresh owns the phase (mid-refresh disconnect is expected).
+  setPhase('idle', { owner: 'steam' });
+  if (wasLoggedIn) {
+    pushEvent('logged_out', {});
   }
 }
 

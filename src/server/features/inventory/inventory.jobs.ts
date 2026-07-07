@@ -2,6 +2,7 @@ import cron from 'node-cron';
 
 type ScheduledTask = ReturnType<typeof cron.schedule>;
 import { refreshPrices } from './inventory.service.ts';
+import type { PriceSource } from '../pricing/pricing.service.ts';
 import { getAllProfiles } from '../../db/queries/profiles.ts';
 import { cleanupOldData } from '../../db/client.ts';
 import { getSetting, setSetting } from '../../db/queries/settings.ts';
@@ -19,6 +20,36 @@ export interface PriceRefreshSchedule {
 
 const SCHEDULE_KEY = 'price_refresh_schedule';
 const DEFAULT_SCHEDULE: PriceRefreshSchedule = { enabled: true, hour: 12, minute: 0 };
+
+// ── Tracked price sources ──
+// Which sources the daily reload fetches. Steam is mandatory (profile summaries
+// and most of the UI are steam-based); csfloat/skinport are opt-in. The
+// comparator tab appears client-side once 2+ sources are tracked.
+const TRACKED_SOURCES_KEY = 'tracked_price_sources';
+const VALID_SOURCES: PriceSource[] = ['steam', 'csfloat', 'skinport'];
+// Default matches the historical cron behaviour (steam + skinport daily).
+const DEFAULT_TRACKED: PriceSource[] = ['steam', 'skinport'];
+
+export function getTrackedSources(): PriceSource[] {
+  try {
+    const raw = getSetting(TRACKED_SOURCES_KEY);
+    if (!raw) return DEFAULT_TRACKED;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return DEFAULT_TRACKED;
+    const sources = VALID_SOURCES.filter((s) => parsed.includes(s));
+    if (!sources.includes('steam')) sources.unshift('steam');
+    return sources;
+  } catch {
+    return DEFAULT_TRACKED;
+  }
+}
+
+export function setTrackedSources(sources: string[]): PriceSource[] {
+  const clean = VALID_SOURCES.filter((s) => sources.includes(s));
+  if (!clean.includes('steam')) clean.unshift('steam');
+  setSetting(TRACKED_SOURCES_KEY, JSON.stringify(clean));
+  return getTrackedSources();
+}
 // Fixed registry name: node-cron keys its global task map by options.name.
 const DAILY_TASK_NAME = 'daily-price-reload';
 
@@ -62,19 +93,16 @@ export function runDailyPriceRefresh(): boolean {
   void (async () => {
     try {
       const profiles = getAllProfiles();
-      logger.info(`[Cron] Daily price reload starting for ${profiles.length} profile(s)`);
+      const sources = getTrackedSources();
+      logger.info(`[Cron] Daily price reload starting for ${profiles.length} profile(s), sources: ${sources.join(', ')}`);
       for (const profile of profiles) {
         if (profile.item_count === 0) continue;
-        try {
-          await refreshPrices(profile.steam_id, 'steam', 'all');
-        } catch (err) {
-          logger.error(`[Cron] Daily steam reload failed for ${profile.steam_id}:`, (err as Error).message);
-        }
-        try {
-          // Skinport is a cached bulk lookup — cheap, and keeps its history line daily.
-          await refreshPrices(profile.steam_id, 'skinport', 'all');
-        } catch (err) {
-          logger.error(`[Cron] Daily skinport reload failed for ${profile.steam_id}:`, (err as Error).message);
+        for (const source of sources) {
+          try {
+            await refreshPrices(profile.steam_id, source, 'all');
+          } catch (err) {
+            logger.error(`[Cron] Daily ${source} reload failed for ${profile.steam_id}:`, (err as Error).message);
+          }
         }
       }
       logger.info('[Cron] Daily price reload finished');

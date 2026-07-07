@@ -42,11 +42,11 @@ const translations = {
   // ── Profiles ──
   'profiles.addAccount': { fr: 'Ajouter un compte', en: 'Add account' },
   'profiles.yourProfiles': { fr: 'Vos profils', en: 'Your profiles' },
-  'profiles.selectProfile': { fr: 'Selectionne un profil', en: 'Select a profile' },
+  'profiles.selectProfile': { fr: 'Sélectionne un profil', en: 'Select a profile' },
   'profiles.items': { fr: 'Items', en: 'Items' },
   'profiles.value': { fr: 'Valeur', en: 'Value' },
-  'profiles.lastSync': { fr: 'Derniere synchronisation', en: 'Last sync' },
-  'profiles.neverSynced': { fr: 'Jamais synchronise', en: 'Never synced' },
+  'profiles.lastSync': { fr: 'Dernière synchronisation', en: 'Last sync' },
+  'profiles.neverSynced': { fr: 'Jamais synchronisé', en: 'Never synced' },
   'profiles.noProfiles': { fr: 'Aucun profil', en: 'No profiles' },
   'profiles.noProfilesDesc': {
     fr: 'Connectez-vous avec votre compte Steam pour commencer le suivi de votre inventaire CS2.',
@@ -54,11 +54,11 @@ const translations = {
   },
 
   // ── Multi-account overview (home page banner) ──
-  'overview.title': { fr: 'Vue combinee', en: 'Combined overview' },
-  'overview.combinedValue': { fr: 'Valeur combinee', en: 'Combined value' },
+  'overview.title': { fr: 'Vue combinée', en: 'Combined overview' },
+  'overview.combinedValue': { fr: 'Valeur combinée', en: 'Combined value' },
   'overview.totalItems': { fr: 'Items au total', en: 'Total items' },
   'overview.accounts': { fr: 'Comptes', en: 'Accounts' },
-  'overview.topItems': { fr: 'Top items combines', en: 'Combined top items' },
+  'overview.topItems': { fr: 'Top items combinés', en: 'Combined top items' },
   'overview.itemsOnly': { fr: 'Valeurs Steam, hors stickers.', en: 'Steam values, stickers excluded.' },
 
   // ── Dashboard nav ──
@@ -68,8 +68,8 @@ const translations = {
   'nav.terminal': { fr: 'Navigation', en: 'Navigation' },
   'nav.account': { fr: 'Compte', en: 'Account' },
   'nav.profiles': { fr: 'Profils', en: 'Profiles' },
-  'nav.logout': { fr: 'Deconnexion', en: 'Logout' },
-  'nav.settings': { fr: 'Parametres', en: 'Settings' },
+  'nav.logout': { fr: 'Déconnecter Steam', en: 'Sign out of Steam' },
+  'nav.settings': { fr: 'Paramètres', en: 'Settings' },
 
   // ── Dashboard header ──
   'dashboard.marketOverview': { fr: 'Vue d\'ensemble', en: 'Market Overview' },
@@ -77,17 +77,17 @@ const translations = {
   'dashboard.storageUnits': { fr: 'Storage Units', en: 'Storage Units' },
   'dashboard.syncing': { fr: 'Synchronisation', en: 'Syncing' },
   'dashboard.refreshPrices': { fr: 'Refresh Prix', en: 'Refresh Prices' },
-  'dashboard.refreshPricesTooltip': { fr: 'Rafraichir les prix (sans connexion Steam)', en: 'Refresh prices (no Steam login needed)' },
+  'dashboard.refreshPricesTooltip': { fr: 'Rafraîchir les prix (sans connexion Steam)', en: 'Refresh prices (no Steam login needed)' },
   'dashboard.refreshInventory': { fr: 'Refresh Inventaire', en: 'Refresh Inventory' },
-  'dashboard.refreshInventoryTooltip': { fr: 'Rafraichir l\'inventaire (necessite connexion Steam)', en: 'Refresh inventory (requires Steam login)' },
-  'dashboard.priceWindowTooltip': { fr: 'Fenetre de mise a jour des prix', en: 'Price update window' },
+  'dashboard.refreshInventoryTooltip': { fr: 'Rafraîchir l\'inventaire (nécessite une connexion Steam)', en: 'Refresh inventory (requires Steam login)' },
+  'dashboard.priceWindowTooltip': { fr: 'Fenêtre de mise à jour des prix', en: 'Price update window' },
 
   // ── Dashboard KPIs ──
   'dashboard.portfolioPerformance': { fr: 'Performance du portefeuille', en: 'Portfolio performance' },
   'dashboard.itemsLabel': { fr: 'items', en: 'items' },
   'dashboard.uniqueLabel': { fr: 'uniques', en: 'unique' },
   'dashboard.netValuation': { fr: 'Valeur nette', en: 'Net valuation' },
-  'dashboard.noChartData': { fr: 'Aucune donnee', en: 'No chart data' },
+  'dashboard.noChartData': { fr: 'Aucune donnée', en: 'No chart data' },
   'dashboard.topAssets': { fr: 'Top Items', en: 'Top Assets' },
   'dashboard.invested': { fr: 'Investi', en: 'Invested' },
 
@@ -97,20 +97,20 @@ const translations = {
   'sort.price': { fr: 'Prix', en: 'Price' },
   'sort.name': { fr: 'Nom', en: 'Name' },
   'sort.float': { fr: 'Float', en: 'Float' },
-  'sort.quantity': { fr: 'Quantite', en: 'Quantity' },
+  'sort.quantity': { fr: 'Quantité', en: 'Quantity' },
   'sort.by': { fr: 'Trier par', en: 'Sort by' },
   'sort.value': { fr: 'Valeur', en: 'Value' },
   'sort.itemCount': { fr: 'Nombre d\'items', en: 'Item count' },
 
   // ── Filters ──
-  'filter.rarity': { fr: 'Rarete', en: 'Rarity' },
+  'filter.rarity': { fr: 'Rareté', en: 'Rarity' },
   'filter.type': { fr: 'Type', en: 'Type' },
-  'filter.quality': { fr: 'Qualite', en: 'Quality' },
+  'filter.quality': { fr: 'Qualité', en: 'Quality' },
   'filter.all': { fr: 'Tous', en: 'All' },
   'filter.normal': { fr: 'Normal', en: 'Normal' },
   'filter.withStickers': { fr: 'Avec stickers', en: 'With stickers' },
   'filter.notablePatterns': { fr: 'Patterns notables', en: 'Notable patterns' },
-  'filter.reset': { fr: 'Reinitialiser', en: 'Reset' },
+  'filter.reset': { fr: 'Réinitialiser', en: 'Reset' },
   'type.knife': { fr: 'Couteaux', en: 'Knives' },
   'type.gloves': { fr: 'Gants', en: 'Gloves' },
   'type.rifle': { fr: 'Fusils', en: 'Rifles' },
@@ -125,50 +125,49 @@ const translations = {
 
   // ── Rare patterns / finishes ──
   'patterns.title': { fr: 'Patterns notables', en: 'Notable patterns' },
-  'patterns.fnlow': { fr: 'Float tres bas', en: 'Very low float' },
+  'patterns.fnlow': { fr: 'Float très bas', en: 'Very low float' },
   'patterns.nearzero': { fr: 'Float quasi nul', en: 'Near-zero float' },
   'patterns.bluegem': { fr: 'Blue Gem', en: 'Blue Gem' },
 
   // ── Portfolio composition ──
-  'portfolio.composition': { fr: 'Repartition du portefeuille', en: 'Portfolio breakdown' },
+  'portfolio.composition': { fr: 'Répartition du portefeuille', en: 'Portfolio breakdown' },
 
   // ── Top movers ──
   'movers.title': { fr: 'Top variations', en: 'Top movers' },
   'movers.gainers': { fr: 'Hausses', en: 'Gainers' },
   'movers.losers': { fr: 'Baisses', en: 'Losers' },
-  'movers.none': { fr: 'Pas assez de donnees', en: 'Not enough data' },
+  'movers.none': { fr: 'Pas assez de données', en: 'Not enough data' },
 
   // ── Market trends (market-wide, not profile-scoped) ──
-  'trends.title': { fr: 'Tendances du marche', en: 'Market trends' },
+  'trends.title': { fr: 'Tendances du marché', en: 'Market trends' },
   'trends.caption': {
-    fr: 'Couvre uniquement les items deja suivis par l\'app (items possedes/rafraichis + leurs stickers), pas tout le marche Steam.',
+    fr: 'Couvre uniquement les items déjà suivis par l\'app (items possédés/rafraîchis + leurs stickers), pas tout le marché Steam.',
     en: 'Covers only items the app has already tracked (owned/refreshed items + their stickers), not the entire Steam market.',
   },
   'trends.none': { fr: 'Pas assez d\'historique', en: 'Not enough history' },
   'trends.noneDesc': {
-    fr: 'Les tendances apparaitront ici apres quelques jours de prix collectes.',
+    fr: 'Les tendances apparaîtront ici après quelques jours de prix collectés.',
     en: 'Trends will appear here after a few days of collected prices.',
   },
 
   // ── Pagination ──
-  'pagination.prevPage': { fr: 'Page precedente', en: 'Previous page' },
+  'pagination.prevPage': { fr: 'Page précédente', en: 'Previous page' },
   'pagination.nextPage': { fr: 'Page suivante', en: 'Next page' },
 
   // ── Empty states ──
-  'empty.noResults': { fr: 'Aucun resultat', en: 'No results found' },
+  'empty.noResults': { fr: 'Aucun résultat', en: 'No results found' },
   'empty.noResultsDesc': { fr: 'Essaie d\'ajuster la recherche ou les filtres.', en: 'Try adjusting your search or filters.' },
   'empty.noStorageUnits': { fr: 'Aucune storage unit', en: 'No storage units' },
-  'empty.noStorageUnitsDesc': { fr: 'Les storage units apparaitront ici apres un refresh de l\'inventaire.', en: 'Storage units will appear here after an inventory refresh.' },
-  'empty.moversDesc': { fr: 'Les variations de prix apparaitront ici apres quelques jours de donnees.', en: 'Price changes will show up here after a few days of data.' },
+  'empty.noStorageUnitsDesc': { fr: 'Les storage units apparaîtront ici après un refresh de l\'inventaire.', en: 'Storage units will appear here after an inventory refresh.' },
+  'empty.moversDesc': { fr: 'Les variations de prix apparaîtront ici après quelques jours de données.', en: 'Price changes will show up here after a few days of data.' },
 
-  // ── Activity Feed ──
-  'feed.activity': { fr: 'Activite', en: 'Activity' },
-  'feed.showPanel': { fr: 'Afficher le panneau', en: 'Show panel' },
-  'feed.system': { fr: 'Systeme', en: 'System' },
+  // ── Activity ──
+  'feed.activity': { fr: 'Activité', en: 'Activity' },
+  'feed.system': { fr: 'Système', en: 'System' },
   'feed.syncingTitle': { fr: 'Synchronisation...', en: 'Syncing...' },
-  'feed.syncingDesc': { fr: 'Rafraichissement de l\'inventaire en cours. Les prix sont mis a jour...', en: 'Inventory refresh in progress. Prices are being fetched...' },
-  'feed.syncComplete': { fr: 'Sync terminee', en: 'Sync Complete' },
-  'feed.itemsSynced': { fr: 'items synchronises', en: 'items synced' },
+  'feed.syncingDesc': { fr: 'Rafraîchissement de l\'inventaire en cours. Les prix sont mis à jour...', en: 'Inventory refresh in progress. Prices are being fetched...' },
+  'feed.syncComplete': { fr: 'Sync terminée', en: 'Sync Complete' },
+  'feed.itemsSynced': { fr: 'items synchronisés', en: 'items synced' },
   'feed.showAll': { fr: 'Voir tout', en: 'Show all' },
   'feed.showLess': { fr: 'Voir moins', en: 'Show less' },
 
@@ -176,17 +175,17 @@ const translations = {
   'alerts.title': { fr: 'Alertes Prix', en: 'Price Alerts' },
   'alerts.priceUp': { fr: 'Prix en hausse', en: 'Price increase' },
   'alerts.priceDown': { fr: 'Prix en baisse', en: 'Price decrease' },
-  'alerts.moderateUp': { fr: 'Hausse moderee', en: 'Moderate increase' },
-  'alerts.moderateDown': { fr: 'Baisse moderee', en: 'Moderate decrease' },
+  'alerts.moderateUp': { fr: 'Hausse modérée', en: 'Moderate increase' },
+  'alerts.moderateDown': { fr: 'Baisse modérée', en: 'Moderate decrease' },
   'alerts.noAlerts': { fr: 'Aucune alerte', en: 'No alerts' },
-  'alerts.custom': { fr: 'Alertes personnalisees', en: 'Custom alerts' },
-  'alerts.create': { fr: 'Creer', en: 'Create' },
-  'alerts.triggered': { fr: 'Declenchee', en: 'Triggered' },
-  'alerts.none': { fr: 'Aucune alerte personnalisee', en: 'No custom alerts' },
+  'alerts.custom': { fr: 'Alertes personnalisées', en: 'Custom alerts' },
+  'alerts.create': { fr: 'Créer', en: 'Create' },
+  'alerts.triggered': { fr: 'Déclenchée', en: 'Triggered' },
+  'alerts.none': { fr: 'Aucune alerte personnalisée', en: 'No custom alerts' },
   'alerts.priceAlert': { fr: 'Alerte prix', en: 'Price alert' },
 
   // ── Daily History ──
-  'history.title': { fr: 'Historique Journalier', en: 'Daily History' },
+  'history.title': { fr: 'Historique journalier', en: 'Daily History' },
   'history.noHistory': { fr: 'Aucun historique', en: 'No History' },
 
   // ── Item Detail Modal ──
@@ -199,9 +198,9 @@ const translations = {
   'item.clear': { fr: 'Effacer', en: 'Clear' },
 
   // ── Settings ──
-  'settings.title': { fr: 'Parametres', en: 'Settings' },
+  'settings.title': { fr: 'Paramètres', en: 'Settings' },
   'settings.language': { fr: 'Langue', en: 'Language' },
-  'settings.french': { fr: 'Francais', en: 'French' },
+  'settings.french': { fr: 'Français', en: 'French' },
   'settings.english': { fr: 'Anglais', en: 'English' },
   'settings.back': { fr: 'Retour', en: 'Back' },
   'settings.priceProvider': { fr: 'Source des prix', en: 'Price source' },
@@ -209,61 +208,61 @@ const translations = {
   'settings.csfloat': { fr: 'CSFloat', en: 'CSFloat' },
   'settings.skinport': { fr: 'Skinport', en: 'Skinport' },
   'settings.steamFees': { fr: 'Steam (- frais)', en: 'Steam (- fees)' },
-  'settings.steamFeesDesc': { fr: 'Steam (- frais) applique les frais Steam/CS2. CSFloat est une source separee.', en: 'Steam (- fees) applies Steam/CS2 seller fees. CSFloat is a separate source.' },
-  'settings.pricingMethod': { fr: 'Methode de recuperation des prix', en: 'Price fetch method' },
-  'settings.pricingMethodDesc': { fr: 'Avec proxies = rapide. Sans = connexion directe, plus lente mais complete et jamais bloquee par Steam.', en: 'With proxies = fast. Without = direct connection, slower but complete and never rate-limited by Steam.' },
+  'settings.steamFeesDesc': { fr: 'Steam (- frais) applique les frais Steam/CS2. CSFloat est une source séparée.', en: 'Steam (- fees) applies Steam/CS2 seller fees. CSFloat is a separate source.' },
+  'settings.pricingMethod': { fr: 'Méthode de récupération des prix', en: 'Price fetch method' },
+  'settings.pricingMethodDesc': { fr: 'Avec proxies = rapide. Sans = connexion directe, plus lente mais complète et jamais bloquée par Steam.', en: 'With proxies = fast. Without = direct connection, slower but complete and never rate-limited by Steam.' },
   'settings.modeAuto': { fr: 'Auto', en: 'Auto' },
   'settings.modeProxy': { fr: 'Proxies (rapide)', en: 'Proxies (fast)' },
   'settings.modeDirect': { fr: 'Direct (lent)', en: 'Direct (slow)' },
-  'settings.modeAutoHint': { fr: 'Auto : utilise les proxies si renseignes, sinon direct.', en: 'Auto: uses proxies if set, otherwise direct.' },
-  'settings.proxiesHint': { fr: 'Formats acceptes : host:port:user:pass ou http://user:pass@host:port. Une seule gateway rotative suffit.', en: 'Accepted: host:port:user:pass or http://user:pass@host:port. A single rotating gateway is enough.' },
+  'settings.modeAutoHint': { fr: 'Auto : utilise les proxies si renseignés, sinon direct.', en: 'Auto: uses proxies if set, otherwise direct.' },
+  'settings.proxiesHint': { fr: 'Formats acceptés : host:port:user:pass ou http://user:pass@host:port. Une seule gateway rotative suffit.', en: 'Accepted: host:port:user:pass or http://user:pass@host:port. A single rotating gateway is enough.' },
   'settings.save': { fr: 'Enregistrer', en: 'Save' },
-  'settings.saved': { fr: 'Enregistre', en: 'Saved' },
+  'settings.saved': { fr: 'Enregistré', en: 'Saved' },
   'settings.activeMode': { fr: 'Mode actif', en: 'Active mode' },
   'settings.proxiesCurrent': { fr: 'Proxies actuels', en: 'Current proxies' },
   'settings.proxiesNone': { fr: 'Aucun (mode direct)', en: 'None (direct mode)' },
   'settings.proxiesNew': { fr: 'Nouveaux proxies (laisser vide = conserver)', en: 'New proxies (leave blank to keep)' },
   'settings.test': { fr: 'Tester', en: 'Test' },
   'settings.testing': { fr: 'Test...', en: 'Testing...' },
-  'settings.reset': { fr: 'Reinitialiser (.env)', en: 'Reset (.env)' },
+  'settings.reset': { fr: 'Réinitialiser (.env)', en: 'Reset (.env)' },
   'settings.accent': { fr: 'Couleur d\'accent', en: 'Accent color' },
   'settings.autoPrices': { fr: 'Prix automatiques', en: 'Automatic prices' },
   'settings.autoPricesDesc': {
-    fr: 'Recharge chaque jour les prix des items deja en base, a l\'heure choisie — sans connexion Steam. Les nouveaux items demandent une connexion + refresh inventaire.',
-    en: 'Reloads prices for items already in the database every day at the chosen time — no Steam login involved. New items require logging in + an inventory refresh.',
+    fr: 'Recharge chaque jour les prix des items déjà en base, à l\'heure choisie, sans connexion Steam. Les nouveaux items demandent une connexion + refresh inventaire.',
+    en: 'Reloads prices for items already in the database every day at the chosen time, no Steam login involved. New items require logging in + an inventory refresh.',
   },
-  'settings.autoPricesOn': { fr: 'Active', en: 'Enabled' },
-  'settings.autoPricesOff': { fr: 'Desactive', en: 'Disabled' },
+  'settings.autoPricesOn': { fr: 'Activé', en: 'Enabled' },
+  'settings.autoPricesOff': { fr: 'Désactivé', en: 'Disabled' },
   'settings.runNow': { fr: 'Lancer maintenant', en: 'Run now' },
-  'toast.scheduleSaved': { fr: 'Planification enregistree', en: 'Schedule saved' },
-  'toast.runStarted': { fr: 'Rechargement des prix lance', en: 'Price reload started' },
-  'toast.runAlready': { fr: 'Un rechargement est deja en cours', en: 'A reload is already running' },
+  'toast.scheduleSaved': { fr: 'Planification enregistrée', en: 'Schedule saved' },
+  'toast.runStarted': { fr: 'Rechargement des prix lancé', en: 'Price reload started' },
+  'toast.runAlready': { fr: 'Un rechargement est déjà en cours', en: 'A reload is already running' },
 
   // ── Automatic backup ──
   'settings.backup': { fr: 'Sauvegarde automatique', en: 'Automatic backup' },
   'settings.backupDesc': {
-    fr: 'Exporte chaque jour (03:00) vos profils, items, achats, alertes, historique et reglages dans un fichier JSON. Les 14 dernieres sauvegardes sont conservees.',
+    fr: 'Exporte chaque jour (03:00) vos profils, items, achats, alertes, historique et réglages dans un fichier JSON. Les 14 dernières sauvegardes sont conservées.',
     en: 'Exports your profiles, items, purchases, alerts, history and settings to a JSON file every day (03:00). The last 14 backups are kept.',
   },
   'settings.backupNow': { fr: 'Sauvegarder maintenant', en: 'Back up now' },
-  'settings.backupDownload': { fr: 'Telecharger la derniere sauvegarde', en: 'Download latest backup' },
-  'settings.backupLast': { fr: 'Derniere sauvegarde', en: 'Last backup' },
+  'settings.backupDownload': { fr: 'Télécharger la dernière sauvegarde', en: 'Download latest backup' },
+  'settings.backupLast': { fr: 'Dernière sauvegarde', en: 'Last backup' },
   'settings.backupNone': { fr: 'Aucune sauvegarde pour le moment', en: 'No backup yet' },
   'settings.backupCount': { fr: 'sauvegardes', en: 'backups' },
-  'toast.backupDone': { fr: 'Sauvegarde effectuee', en: 'Backup completed' },
-  'toast.backupRunning': { fr: 'Une sauvegarde est deja en cours', en: 'A backup is already running' },
-  'toast.backupFailed': { fr: 'Echec de la sauvegarde', en: 'Backup failed' },
+  'toast.backupDone': { fr: 'Sauvegarde effectuée', en: 'Backup completed' },
+  'toast.backupRunning': { fr: 'Une sauvegarde est déjà en cours', en: 'A backup is already running' },
+  'toast.backupFailed': { fr: 'Échec de la sauvegarde', en: 'Backup failed' },
 
   // ── Toasts ──
-  'toast.settingsSaved': { fr: 'Parametres enregistres', en: 'Settings saved' },
-  'toast.settingsReset': { fr: 'Parametres reinitialises', en: 'Settings reset' },
+  'toast.settingsSaved': { fr: 'Paramètres enregistrés', en: 'Settings saved' },
+  'toast.settingsReset': { fr: 'Paramètres réinitialisés', en: 'Settings reset' },
   'toast.proxyOk': { fr: 'Proxy OK', en: 'Proxy OK' },
-  'toast.proxyFail': { fr: 'Echec du test proxy', en: 'Proxy test failed' },
-  'toast.buyPriceSaved': { fr: 'Prix d\'achat enregistre', en: 'Buy price saved' },
-  'toast.buyPriceCleared': { fr: 'Prix d\'achat efface', en: 'Buy price cleared' },
-  'toast.alertCreated': { fr: 'Alerte creee', en: 'Alert created' },
-  'toast.alertDeleted': { fr: 'Alerte supprimee', en: 'Alert deleted' },
-  'toast.refreshError': { fr: 'Echec du rafraichissement', en: 'Refresh failed' },
+  'toast.proxyFail': { fr: 'Échec du test proxy', en: 'Proxy test failed' },
+  'toast.buyPriceSaved': { fr: 'Prix d\'achat enregistré', en: 'Buy price saved' },
+  'toast.buyPriceCleared': { fr: 'Prix d\'achat effacé', en: 'Buy price cleared' },
+  'toast.alertCreated': { fr: 'Alerte créée', en: 'Alert created' },
+  'toast.alertDeleted': { fr: 'Alerte supprimée', en: 'Alert deleted' },
+  'toast.refreshError': { fr: 'Échec du rafraîchissement', en: 'Refresh failed' },
 
   // ── Login teaser ──
   'login.teaser': { fr: 'Reprends ton suivi', en: 'Pick up where you left off' },
@@ -276,6 +275,67 @@ const translations = {
   // ── Inventory ──
   'inventory.includeStorage': { fr: 'Inclure Storage Units', en: 'Include Storage Units' },
   'storage.emptyUnits': { fr: 'Storage Units vides', en: 'Empty Storage Units' },
+
+  // ── Account status widget ──
+  'status.connected': { fr: 'Connecté', en: 'Connected' },
+  'status.disconnected': { fr: 'Déconnecté', en: 'Disconnected' },
+  'status.phase.logging_in': { fr: 'Connexion Steam…', en: 'Signing in to Steam…' },
+  'status.phase.awaiting_steam_guard': { fr: 'En attente de Steam Guard…', en: 'Waiting for Steam Guard…' },
+  'status.phase.launching_cs2': { fr: 'Démarrage CS2…', en: 'Starting CS2…' },
+  'status.phase.waiting_gc': { fr: 'Attente du Game Coordinator…', en: 'Waiting for Game Coordinator…' },
+  'status.phase.fetching_inventory': { fr: 'Scan de l\'inventaire…', en: 'Scanning inventory…' },
+  'status.phase.fetching_storage': { fr: 'Scan des storage units', en: 'Scanning storage units' },
+  'status.phase.fetching_prices': { fr: 'Récupération des prix', en: 'Fetching prices' },
+  'status.phase.disconnecting': { fr: 'Déconnexion…', en: 'Disconnecting…' },
+
+  // ── Logout confirmation ──
+  'logout.title': { fr: 'Déconnecter la session Steam ?', en: 'Sign out of the Steam session?' },
+  'logout.description': {
+    fr: 'La session Steam active sera fermée. Tes données et l\'historique restent consultables ; il faudra te reconnecter pour rafraîchir l\'inventaire.',
+    en: 'The active Steam session will be closed. Your data and history stay available; you\'ll need to log in again to refresh the inventory.',
+  },
+  'logout.confirm': { fr: 'Déconnecter', en: 'Sign out' },
+  'logout.cancel': { fr: 'Annuler', en: 'Cancel' },
+  'toast.loggedOut': { fr: 'Session Steam déconnectée', en: 'Steam session signed out' },
+
+  // ── Activity tab & live toasts ──
+  'nav.activity': { fr: 'Activité', en: 'Activity' },
+  'toast.refreshStarted': { fr: 'Synchronisation démarrée', en: 'Sync started' },
+  'toast.refreshDone': { fr: 'Inventaire synchronisé', en: 'Inventory synced' },
+  'toast.pricesRefreshDone': { fr: 'Prix mis à jour', en: 'Prices updated' },
+  'toast.alertTriggered': { fr: 'Alerte déclenchée : ', en: 'Alert triggered: ' },
+  'toast.inventoryChanged': { fr: 'Inventaire modifié', en: 'Inventory changed' },
+  'feed.movements': { fr: 'Mouvements d\'inventaire', en: 'Inventory movements' },
+  'movements.none': { fr: 'Aucun mouvement détecté entre les syncs.', en: 'No movements detected between syncs.' },
+  'movements.added': { fr: 'Ajouté', en: 'Added' },
+  'movements.removed': { fr: 'Retiré', en: 'Removed' },
+
+  // ── Aggregated view ──
+  'overview.allAccounts': { fr: 'Tous les comptes', en: 'All accounts' },
+  'overview.allAccountsSubtitle': { fr: 'Vue agrégée de tous les comptes', en: 'Aggregated view across all accounts' },
+  'dashboard.accountBreakdown': { fr: 'Répartition par compte', en: 'Breakdown by account' },
+
+  // ── Settings sections ──
+  'settings.sectionAppearance': { fr: 'Apparence', en: 'Appearance' },
+  'settings.sectionPricing': { fr: 'Prix', en: 'Pricing' },
+  'settings.sectionAutomation': { fr: 'Automatisation', en: 'Automation' },
+  'settings.sectionData': { fr: 'Données', en: 'Data' },
+  'settings.trackedSources': { fr: 'Sources suivies', en: 'Tracked sources' },
+  'settings.trackedSourcesDesc': {
+    fr: 'Sources récupérées par les prix automatiques. Coche au moins deux sources pour activer le comparateur.',
+    en: 'Sources fetched by the automatic price refresh. Check at least two to enable the comparator.',
+  },
+
+  // ── Source comparator ──
+  'nav.compare': { fr: 'Comparateur', en: 'Comparator' },
+  'compare.title': { fr: 'Comparateur de sources', en: 'Source comparator' },
+  'compare.caption': {
+    fr: 'Dernier prix connu par source pour tes items. Écart calculé par rapport à la source primaire.',
+    en: 'Latest known price per source for your items. Spread computed against the primary source.',
+  },
+  'compare.item': { fr: 'Item', en: 'Item' },
+  'compare.spread': { fr: 'Écart', en: 'Spread' },
+  'compare.none': { fr: 'Pas encore de prix multi-sources. Lance un refresh prix sur chaque source suivie.', en: 'No multi-source prices yet. Run a price refresh for each tracked source.' },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

@@ -7,10 +7,9 @@ import {
   useRefreshInventory,
   useRefreshPrices,
   useCancelPriceRefresh,
-  useAlerts,
-  useDeleteAlert,
   useMovers,
   useTrends,
+  useTrackedSources,
 } from '../../hooks/useApi.ts';
 import { useRefreshPolling } from '../../hooks/usePolling.ts';
 import { useI18n, applyFees, type PriceProvider, type TranslationKey } from '../../lib/i18n.tsx';
@@ -19,31 +18,26 @@ import { getDisplayItemName } from '../../lib/item-display.ts';
 import { detectPatterns } from '../../../shared/lib/patterns.ts';
 import { ItemDetailModal } from '../inventory/ItemDetailModal.tsx';
 import { ItemCard } from '../inventory/ItemCard.tsx';
-import { api } from '../../lib/api-client.ts';
 import { useToast } from '../../components/toast.tsx';
 import { PillButton, GhostIconButton } from '../../components/controls.tsx';
+import { AccountStatus } from '../../components/AccountStatus.tsx';
+import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { useCountUp } from '../../hooks/useCountUp.ts';
 import {
-  LayoutDashboard, Package, FolderOpen, LogOut, Users,
-  RefreshCw, Loader2, LogIn, Download, Search, ChevronDown,
+  LayoutDashboard, Package, FolderOpen, Search, ChevronDown,
   ChevronLeft, ChevronRight, TrendingUp, TrendingDown,
-  Activity, DollarSign, Settings, LayoutGrid, List, X,
-  AlignJustify,
+  Activity, LayoutGrid, List, AlignJustify, Scale,
 } from 'lucide-react';
 import type { ItemGroup, StorageUnit } from '../../../shared/types/inventory.ts';
 import type { HistoryPoint, Mover } from '../../../shared/types/api.ts';
-
-type View = 'dashboard' | 'inventory' | 'storage';
-
-// Computed once at module level: the SMIL pulse halo and view transitions are
-// skipped entirely for users who prefer reduced motion.
-const REDUCED_MOTION =
-  typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    : false;
-
-// Shared overline style for card section titles (mirrors .feed-section-title).
-const SECTION_TITLE = 'text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400';
+import { ALL_PROFILES_ID } from '../../../shared/constants/profiles.ts';
+import { REDUCED_MOTION, SECTION_TITLE, activationKeyDown, type View } from './shared.ts';
+import { Sidebar, type NavItem } from './Sidebar.tsx';
+import { MobileNav } from './MobileNav.tsx';
+import { DashboardHeader } from './DashboardHeader.tsx';
+import { ActivityView } from './ActivityView.tsx';
+import { CompareView } from './CompareView.tsx';
+import { AccountBreakdown } from './AccountBreakdown.tsx';
 
 // ── Helpers ──
 
@@ -161,23 +155,6 @@ const COUNT_FORMATTERS: Record<'fr' | 'en', Intl.NumberFormat> = {
   en: new Intl.NumberFormat('en-US'),
 };
 
-function sourceLabel(source: 'steam' | 'csfloat' | 'skinport' | null): string {
-  if (source === 'steam') return 'Steam';
-  if (source === 'csfloat') return 'CSFloat';
-  if (source === 'skinport') return 'Skinport';
-  return '...';
-}
-
-// Keyboard activation (Enter/Space) for clickable non-button elements.
-function activationKeyDown(action: () => void) {
-  return (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      action();
-    }
-  };
-}
-
 // App shell rendered immediately while the dashboard data loads: real sidebar
 // frame + shimmer blocks where the hero and asset rows will appear.
 function DashboardSkeleton() {
@@ -185,7 +162,7 @@ function DashboardSkeleton() {
     <div className="h-screen grid grid-cols-1 md:grid-cols-[260px_1fr] overflow-hidden">
       <aside className="sf-sidebar hidden md:flex flex-col py-8 px-6">
         <div className="flex items-center gap-3 mb-12">
-          <div className="w-1 h-6 rounded-full bg-[color:var(--accent)] shadow-[0_0_10px_var(--accent)]" />
+          <div className="w-1 h-6 rounded-full bg-[color:var(--accent)]" />
           <span className="font-display text-xl font-bold">SkinCapital</span>
         </div>
         <div className="space-y-2">
@@ -223,7 +200,7 @@ export function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState<View>(() => {
     const v = searchParams.get('view');
-    return v === 'inventory' || v === 'storage' ? v : 'dashboard';
+    return v === 'inventory' || v === 'storage' || v === 'activity' || v === 'compare' ? v : 'dashboard';
   });
   const [days, setDays] = useState(30);
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
@@ -244,7 +221,7 @@ export function DashboardPage() {
   const [viewMode, setViewMode] = useState<'list' | 'cards'>('list');
   const [compact, setCompact] = useState(() => localStorage.getItem('inventoryDensity') === 'compact');
   const [includeStorage, setIncludeStorage] = useState(() => searchParams.get('storage') === '1');
-  const [showFeed, setShowFeed] = useState(true);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [chartHover, setChartHover] = useState<number | null>(null);
   const [storageSort, setStorageSort] = useState<'value' | 'name' | 'count'>('value');
   const toast = useToast();
@@ -271,7 +248,7 @@ export function DashboardPage() {
       return next;
     });
   };
-  const { isRefreshing, syncType, source: activeRefreshSource, lastRefresh, progress } = useRefreshPolling(
+  const { isRefreshing, syncType, source: activeRefreshSource, lastRefresh, progress, steam } = useRefreshPolling(
     steamId,
     priceSource,
   );
@@ -280,7 +257,13 @@ export function DashboardPage() {
   const refreshPricesMutation = useRefreshPrices();
   const cancelPriceRefreshMutation = useCancelPriceRefresh();
 
-  const isOwner = status?.isLoggedIn && status?.steamId === steamId;
+  const isAggregate = steamId === ALL_PROFILES_ID;
+  const isOwner = !!status?.isLoggedIn && status?.steamId === steamId;
+
+  // Comparator tab only exists once 2+ price sources are tracked (Settings).
+  const { data: trackedSourcesData } = useTrackedSources();
+  const trackedSources = trackedSourcesData?.sources ?? ['steam'];
+  const showCompare = trackedSources.length >= 2;
 
   const baseItems = useMemo(() => {
     if (!data) return [] as ItemGroup[];
@@ -391,10 +374,12 @@ export function DashboardPage() {
   const formatCount = (value: number) => COUNT_FORMATTERS[locale].format(value);
   const totalStorageUnits = data.storageUnits.length + data.emptyStorageUnits;
 
-  const navItems: { id: View; icon: typeof LayoutDashboard; label: string }[] = [
+  const navItems: NavItem[] = [
     { id: 'dashboard', icon: LayoutDashboard, label: t('nav.dashboard') },
     { id: 'inventory', icon: Package, label: `${t('nav.inventory')} (${formatCount(data.totalItems)})` },
     { id: 'storage', icon: FolderOpen, label: `${t('nav.storageUnits')} (${formatCount(totalStorageUnits)})` },
+    { id: 'activity', icon: Activity, label: t('nav.activity') },
+    ...(showCompare ? [{ id: 'compare' as const, icon: Scale, label: t('nav.compare') }] : []),
   ];
 
   const resetFilters = () => {
@@ -456,14 +441,18 @@ export function DashboardPage() {
       });
     }
   };
-  const handleLogout = async () => { await logout.mutateAsync(); };
+  const handleLogout = async () => {
+    try {
+      await logout.mutateAsync();
+      setLogoutDialogOpen(false);
+      toast.success(t('toast.loggedOut'));
+      navigate('/');
+    } catch (err) {
+      toast.error((err as Error).message || t('toast.refreshError'));
+    }
+  };
 
-  const feedCols = showFeed ? 'xl:grid-cols-[260px_1fr_380px]' : 'xl:grid-cols-[260px_1fr]';
   const isPriceRefreshForCurrentSource = syncType === 'prices' && activeRefreshSource === priceSource;
-  const syncProgressText = progress && progress.total > 0
-    ? ` (${progress.fetched}/${progress.total})`
-    : '';
-  const syncSourceText = syncType === 'prices' ? ` - ${sourceLabel(activeRefreshSource)}` : '';
 
   // Hero chart crosshair: nearest data point under the cursor (desktop nicety).
   const handleChartMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -478,161 +467,70 @@ export function DashboardPage() {
   const hoverDatum = chartHover !== null ? data.historyData[chartHover] : undefined;
   const hoverPct = hoverPoint ? (hoverPoint.x / 400) * 100 : 0;
 
+  const viewTitle =
+    view === 'dashboard' ? t('dashboard.marketOverview')
+      : view === 'inventory' ? t('dashboard.inventory')
+        : view === 'storage' ? t('dashboard.storageUnits')
+          : view === 'activity' ? t('nav.activity')
+            : t('compare.title');
+
+  const accountStatusNode = isAggregate
+    ? <span className="text-xs text-gray-500 self-end pb-1">{t('overview.allAccountsSubtitle')}</span>
+    : <AccountStatus steamId={steamId} steam={steam} progress={progress} />;
+
   return (
     <>
-      <div className={`h-screen grid grid-cols-1 md:grid-cols-[260px_1fr] ${feedCols} overflow-hidden`}>
+      <div className="h-screen grid grid-cols-1 md:grid-cols-[260px_1fr] overflow-hidden">
 
         {/* ═══ SIDEBAR ═══ */}
-        <aside className="sf-sidebar hidden md:flex flex-col py-8 px-6">
-          <div className="flex items-center gap-3 mb-12">
-            <div className="w-1 h-6 rounded-full bg-[color:var(--accent)] shadow-[0_0_10px_var(--accent)]" />
-            <span className="font-display text-xl font-bold">SkinCapital</span>
-          </div>
-
-          <span className="nav-label mb-3">{t('nav.terminal')}</span>
-          <nav className="space-y-1 mb-8">
-            {navItems.map((n) => (
-              <button key={n.id} className={`sf-nav-item ${view === n.id ? 'active' : ''}`} onClick={() => switchView(n.id)}>
-                <n.icon className="w-4 h-4" /> {n.label}
-              </button>
-            ))}
-          </nav>
-
-          <span className="nav-label mb-3">{t('nav.account')}</span>
-          <nav className="space-y-1">
-            <button className="sf-nav-item" onClick={() => navigate('/')}>
-              <Users className="w-4 h-4" /> {t('nav.profiles')}
-            </button>
-            <button className="sf-nav-item" onClick={() => navigate(steamId ? `/settings/${steamId}` : '/settings')}>
-              <Settings className="w-4 h-4" /> {t('nav.settings')}
-            </button>
-            {isOwner && (
-              <button className="sf-nav-item" onClick={handleLogout}>
-                <LogOut className="w-4 h-4" /> {t('nav.logout')}
-              </button>
-            )}
-          </nav>
-
-          <div className="mt-auto p-5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-            <div className="text-xs text-gray-500 mb-1">{t('dashboard.netValuation')}</div>
-            <div className="font-mono text-2xl font-bold">{formatEur(animatedTotal, pp)}</div>
-            {data.change24h.hasData && (
-              <div className={`font-mono text-xs mt-1 ${data.change24h.percentage >= 0 ? 'text-sf-green' : 'text-sf-pink'}`}>
-                {formatPercent(data.change24h.percentage)} (24H)
-              </div>
-            )}
-          </div>
-        </aside>
+        <Sidebar
+          navItems={navItems}
+          view={view}
+          onSwitchView={switchView}
+          steamId={steamId}
+          showLogout={isOwner}
+          onLogoutClick={() => setLogoutDialogOpen(true)}
+          netValue={animatedTotal}
+          change24h={data.change24h}
+          pp={pp}
+        />
 
         {/* ═══ MAIN ═══ */}
         <main className="overflow-y-auto px-5 py-8 xl:px-10 relative">
           <div className="grid-overlay" />
 
-          {/* Mobile nav */}
-          <div className="md:hidden flex items-center gap-3 mb-4 relative z-10">
-            <button onClick={() => navigate('/')} className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center"><ChevronLeft className="w-4 h-4" /></button>
-            <div className="w-1 h-5 rounded-full bg-[color:var(--accent)] shadow-[0_0_10px_var(--accent)]" />
-            <span className="font-display font-bold text-lg">SkinCapital</span>
-            {/* Compact icon-only actions (the desktop header is hidden on mobile) */}
-            <div className="flex md:hidden items-center gap-2 ml-auto">
-              {isRefreshing && <Loader2 className="w-4 h-4 animate-spin text-sf-cyan" aria-hidden="true" />}
-              <button
-                onClick={handleRefreshPrices}
-                disabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource || isRefreshing}
-                aria-label={t('dashboard.refreshPrices')}
-                title={t('dashboard.refreshPricesTooltip')}
-                className="w-9 h-9 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-300 disabled:opacity-50"
-              >
-                <DollarSign className="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleRefreshInventory}
-                disabled={refreshMutation.isPending || isRefreshing}
-                aria-label={isOwner ? t('dashboard.refreshInventory') : t('auth.login')}
-                title={t('dashboard.refreshInventoryTooltip')}
-                className="w-9 h-9 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-300 disabled:opacity-50"
-              >
-                {isOwner ? <RefreshCw className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-              </button>
-              {isOwner && (
-                <a
-                  href={api.export.csvUrl(steamId)}
-                  download
-                  aria-label="Export CSV"
-                  className="w-9 h-9 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center"
-                >
-                  <Download className="w-4 h-4 text-gray-400" />
-                </a>
-              )}
-            </div>
-          </div>
-          <div className="md:hidden flex gap-1.5 mb-6 overflow-x-auto relative z-10 pb-1">
-            {navItems.map((n) => (
-              <button key={n.id} onClick={() => switchView(n.id)} className={`sf-tag whitespace-nowrap ${view === n.id ? 'btn-accent font-semibold' : ''}`}>
-                {n.label}
-              </button>
-            ))}
-          </div>
+          <MobileNav
+            navItems={navItems}
+            view={view}
+            onSwitchView={switchView}
+            steamId={steamId}
+            isOwner={isOwner}
+            showExport={isOwner}
+            accountStatus={!isAggregate ? <AccountStatus steamId={steamId} steam={steam} progress={progress} compact /> : undefined}
+            onRefreshPrices={handleRefreshPrices}
+            refreshPricesDisabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource || isRefreshing}
+            onRefreshInventory={handleRefreshInventory}
+            refreshInventoryDisabled={refreshMutation.isPending || isRefreshing}
+            showRefreshInventory={!isAggregate}
+          />
 
-          {/* Header */}
-          <header className="hidden md:flex flex-wrap justify-between items-center mb-8 relative z-10 gap-4">
-            <div>
-              <h1 className="font-display tracking-tight text-2xl font-bold mb-0.5">
-                {view === 'dashboard' && t('dashboard.marketOverview')}
-                {view === 'inventory' && t('dashboard.inventory')}
-                {view === 'storage' && t('dashboard.storageUnits')}
-              </h1>
-              <span className="text-xs text-gray-500">{steamId}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {isRefreshing ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sf-cyan/10 border border-sf-cyan/20">
-                    <Loader2 className="w-4 h-4 animate-spin text-sf-cyan" />
-                    <span className="text-xs text-sf-cyan">{t('dashboard.syncing')}{syncSourceText}{syncProgressText}</span>
-                  </div>
-                  {syncType === 'prices' && (
-                    <PillButton
-                      onClick={handleCancelPriceRefresh}
-                      disabled={cancelPriceRefreshMutation.isPending}
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      {locale === 'fr' ? 'Annuler' : 'Cancel'}
-                    </PillButton>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <PillButton
-                    onClick={handleRefreshPrices}
-                    disabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
-                    title={t('dashboard.refreshPricesTooltip')}
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    <span className="hidden lg:inline">{t('dashboard.refreshPrices')}</span>
-                  </PillButton>
-                  <PillButton
-                    onClick={handleRefreshInventory}
-                    disabled={refreshMutation.isPending}
-                    title={t('dashboard.refreshInventoryTooltip')}
-                  >
-                    {isOwner ? <RefreshCw className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-                    <span className="hidden lg:inline">{isOwner ? t('dashboard.refreshInventory') : t('auth.login')}</span>
-                  </PillButton>
-                </>
-              )}
-              {isOwner && (
-                <a href={api.export.csvUrl(steamId)} download className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/[0.02] border border-white/[0.08] hover:border-white/[0.16] transition-all">
-                  <Download className="w-4 h-4 text-gray-400" />
-                </a>
-              )}
-              {data.priceWindow && (
-                <span className="sf-tag text-gray-400" title={t('dashboard.priceWindowTooltip')}>
-                  {formatPriceWindow(data.priceWindow, locale)}
-                </span>
-              )}
-            </div>
-          </header>
+          <DashboardHeader
+            title={viewTitle}
+            accountStatus={accountStatusNode}
+            steamId={steamId}
+            isOwner={isOwner}
+            showExport={isOwner}
+            isRefreshing={isRefreshing}
+            syncType={syncType}
+            onCancelPriceRefresh={handleCancelPriceRefresh}
+            cancelPending={cancelPriceRefreshMutation.isPending}
+            onRefreshPrices={handleRefreshPrices}
+            refreshPricesDisabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
+            onRefreshInventory={handleRefreshInventory}
+            refreshInventoryDisabled={refreshMutation.isPending}
+            showRefreshInventory={!isAggregate}
+            priceWindowLabel={data.priceWindow ? formatPriceWindow(data.priceWindow, locale) : null}
+          />
 
           {/* ── CONTENT ── */}
           <div className="relative z-10">
@@ -641,9 +539,10 @@ export function DashboardPage() {
               <div className="fade-up">
                 <section className="sf-card relative overflow-hidden p-6 mb-8">
                   {/* Faint radial glow behind the flagship number, tinted by the
-                      value-weighted dominant rarity blended into the accent. */}
+                      value-weighted dominant rarity blended into the accent.
+                      glow-grain adds noise INSIDE the halo (textured light). */}
                   <div
-                    className="pointer-events-none absolute -top-16 -left-12 w-96 h-56"
+                    className="glow-grain pointer-events-none absolute -top-16 -left-12 w-96 h-56"
                     style={{
                       background: `radial-gradient(closest-side, color-mix(in srgb, ${
                         dominantRarityColor
@@ -709,7 +608,7 @@ export function DashboardPage() {
                               <circle cx={chart.last.x} cy={chart.last.y} r="6" fill="var(--accent)" opacity="0.25">
                                 {!REDUCED_MOTION && (
                                   <>
-                                    <animate attributeName="r" values="4;9;4" dur="2.4s" repeatCount="indefinite" />
+                                    <animate attributeName="r" values="4;7;4" dur="2.4s" repeatCount="indefinite" />
                                     <animate attributeName="opacity" values="0.4;0;0.4" dur="2.4s" repeatCount="indefinite" />
                                   </>
                                 )}
@@ -745,6 +644,8 @@ export function DashboardPage() {
                     </div>
                   </div>
                 </section>
+
+                {isAggregate && <AccountBreakdown pp={pp} />}
 
                 <PortfolioComposition items={data.items} locale={locale} t={t} pp={pp} />
 
@@ -992,49 +893,52 @@ export function DashboardPage() {
                 )}
               </div>
             )}
+            {/* COMPARE */}
+            {view === 'compare' && (
+              <CompareView
+                steamId={steamId}
+                pp={pp}
+                trackedSources={trackedSources}
+                primarySource={priceSource}
+              />
+            )}
+
+            {/* ACTIVITY */}
+            {view === 'activity' && (
+              <ActivityView
+                data={data}
+                steamId={steamId}
+                pp={pp}
+                locale={locale}
+                isAggregate={isAggregate}
+                isRefreshing={isRefreshing}
+                syncType={syncType}
+                source={activeRefreshSource}
+                selectedPriceSource={priceSource}
+                lastRefresh={lastRefresh}
+                progress={progress}
+                onRefreshPrices={handleRefreshPrices}
+                onCancelPriceRefresh={handleCancelPriceRefresh}
+                isRefreshPricesPending={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
+                isCancelPriceRefreshPending={cancelPriceRefreshMutation.isPending}
+              />
+            )}
           </div>
         </main>
-
-        {/* ═══ ACTIVITY FEED ═══ */}
-        {showFeed && (
-          <aside className="sf-feed hidden xl:block overflow-y-auto px-6 py-8">
-            <div className="flex items-center justify-between mb-6">
-              <span className="text-sm font-semibold text-gray-300">{t('feed.activity')}</span>
-              <button onClick={() => setShowFeed(false)} className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] flex items-center justify-center transition-colors">
-                <X className="w-4 h-4 text-gray-500" />
-              </button>
-            </div>
-            <ActivityFeed
-              data={data}
-              steamId={steamId}
-              pp={pp}
-              locale={locale}
-              isRefreshing={isRefreshing}
-              syncType={syncType}
-              source={activeRefreshSource}
-              selectedPriceSource={priceSource}
-              lastRefresh={lastRefresh}
-              progress={progress}
-              onRefreshPrices={handleRefreshPrices}
-              onCancelPriceRefresh={handleCancelPriceRefresh}
-              isRefreshPricesPending={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
-              isCancelPriceRefreshPending={cancelPriceRefreshMutation.isPending}
-            />
-          </aside>
-        )}
-        {!showFeed && (
-          <button
-            onClick={() => setShowFeed(true)}
-            className="hidden xl:flex fixed right-0 top-1/2 -translate-y-1/2 w-8 h-16 rounded-l-lg bg-white/[0.06] hover:bg-white/[0.10] items-center justify-center transition-colors z-50"
-            title={t('feed.showPanel')}
-            aria-label={t('feed.showPanel')}
-          >
-            <ChevronLeft className="w-4 h-4 text-gray-400" />
-          </button>
-        )}
       </div>
 
-      <ItemDetailModal item={liveSelectedItem} steamId={steamId} open={!!selectedItem} onOpenChange={(open) => { if (!open) setSelectedItem(null); }} />
+      <ConfirmDialog
+        open={logoutDialogOpen}
+        onOpenChange={setLogoutDialogOpen}
+        title={t('logout.title')}
+        description={t('logout.description')}
+        confirmLabel={t('logout.confirm')}
+        cancelLabel={t('logout.cancel')}
+        onConfirm={handleLogout}
+        pending={logout.isPending}
+      />
+
+      <ItemDetailModal item={liveSelectedItem} steamId={steamId} readOnly={isAggregate} open={!!selectedItem} onOpenChange={(open) => { if (!open) setSelectedItem(null); }} />
     </>
   );
 }
@@ -1490,263 +1394,6 @@ function StorageSection({ unit, pp, valueRatio = 0, onItemClick }: { unit: Stora
         </div>
       )}
     </div>
-  );
-}
-
-function ActivityFeed({
-  data,
-  steamId,
-  pp,
-  locale,
-  isRefreshing,
-  syncType,
-  source,
-  selectedPriceSource,
-  lastRefresh,
-  progress,
-  onRefreshPrices,
-  onCancelPriceRefresh,
-  isRefreshPricesPending,
-  isCancelPriceRefreshPending,
-}: {
-  data: import('../../../shared/types/api.ts').DashboardData;
-  steamId: string;
-  pp: PriceProvider;
-  locale: 'fr' | 'en';
-  isRefreshing: boolean;
-  syncType: 'inventory' | 'prices' | null;
-  source: 'steam' | 'csfloat' | 'skinport' | null;
-  selectedPriceSource: 'steam' | 'csfloat' | 'skinport';
-  lastRefresh: string | null;
-  progress: { fetched: number; total: number } | null;
-  onRefreshPrices: () => void;
-  onCancelPriceRefresh: () => void;
-  isRefreshPricesPending: boolean;
-  isCancelPriceRefreshPending: boolean;
-}) {
-  const { t } = useI18n();
-  const [showAlerts, setShowAlerts] = useState(true);
-  const [showCustomAlerts, setShowCustomAlerts] = useState(true);
-  const [showHistory, setShowHistory] = useState(true);
-  const [showAllAlerts, setShowAllAlerts] = useState(false);
-  const [showAllHistory, setShowAllHistory] = useState(false);
-  const { data: customAlerts } = useAlerts(steamId);
-  const deleteAlertMutation = useDeleteAlert();
-  const staleHours = data.priceWindow
-    ? Math.max(0, (Date.now() - new Date(data.priceWindow.to + (data.priceWindow.to.includes('Z') ? '' : 'Z')).getTime()) / (1000 * 60 * 60))
-    : null;
-  const pricesAreStale = staleHours !== null && staleHours >= 20;
-  const syncSourceText = syncType === 'prices' ? ` (${sourceLabel(source)})` : '';
-
-  const priceAlerts = data.items
-    .filter((item) => item.priceChange !== null && item.priceChangePercent !== null && Math.abs(item.priceChange) >= 5 && Math.abs(item.priceChangePercent) >= 5)
-    .slice(0, 6)
-    .map((item) => {
-      const pct = item.priceChangePercent!;
-      const change = item.priceChange!;
-      const isUp = change > 0;
-      const isBig = Math.abs(pct) > 10;
-      const alertType = isBig ? (isUp ? 'high' : 'critical') : 'notable';
-      const label = isBig ? (isUp ? t('alerts.priceUp') : t('alerts.priceDown')) : (isUp ? t('alerts.moderateUp') : t('alerts.moderateDown'));
-      const icon: React.ReactNode = isUp ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />;
-      const colors = {
-        critical: { dot: '#ff3366', bg: 'bg-[#ff336608]', border: 'border-[#ff336618]', text: 'text-sf-pink' },
-        high: { dot: '#4ADE80', bg: 'bg-[#4ADE8008]', border: 'border-[#4ADE8018]', text: 'text-sf-green' },
-        notable: { dot: '#00ccff', bg: 'bg-[#00ccff08]', border: 'border-[#00ccff18]', text: 'text-sf-cyan' },
-      }[alertType as string] as { dot: string; bg: string; border: string; text: string };
-      return { item, label, icon, colors, change, pct };
-    });
-
-  return (
-    <>
-      {/* SYSTEM */}
-      {(isRefreshing || lastRefresh || pricesAreStale) && (
-        <div className="mb-6">
-          <div className="feed-section-title mb-3">{t('feed.system')}</div>
-          {isRefreshing && (
-            <div className="bg-sf-card rounded-xl p-4 border border-sf-cyan/15 mb-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-sf-cyan mb-1">
-                <Loader2 className="w-4 h-4 animate-spin" /> {t('feed.syncingTitle')}{syncSourceText}
-              </div>
-              <div className="text-xs text-gray-400">
-                {syncType === 'prices'
-                  ? (locale === 'fr' ? 'Mise a jour des prix en cours...' : 'Price refresh in progress...')
-                  : t('feed.syncingDesc')}
-                {progress && progress.total > 0 ? ` (${progress.fetched}/${progress.total})` : ''}
-              </div>
-              {syncType === 'prices' && (
-                <button
-                  onClick={onCancelPriceRefresh}
-                  disabled={isCancelPriceRefreshPending}
-                  className="mt-3 h-8 px-3 rounded-lg bg-white/[0.04] border border-white/[0.06] text-xs text-gray-300 hover:text-white hover:bg-white/[0.08] transition-colors disabled:opacity-60"
-                >
-                  {locale === 'fr' ? 'Annuler le refresh' : 'Cancel refresh'}
-                </button>
-              )}
-            </div>
-          )}
-          {lastRefresh && !isRefreshing && (
-            <div className="bg-sf-card rounded-xl p-4 border border-white/[0.06]">
-              <div className="flex items-center gap-2 text-sm font-semibold text-sf-green mb-1">
-                <Activity className="w-4 h-4" /> {t('feed.syncComplete')}
-                <span className="text-[11px] font-mono text-gray-400">
-                  ({sourceLabel(selectedPriceSource)})
-                </span>
-              </div>
-              <div className="text-xs text-gray-400">
-                {data.totalItems} {t('feed.itemsSynced')} &middot; <span className="text-white font-mono">{formatEur(data.totalValue, pp)}</span>
-              </div>
-            </div>
-          )}
-
-          {pricesAreStale && (
-            <div className="bg-amber-400/10 rounded-xl p-4 border border-amber-400/25 mt-3">
-              <div className="text-sm font-semibold text-amber-200 mb-1">
-                {locale === 'fr' ? 'Prix a rafraichir' : 'Prices need refresh'}
-              </div>
-              <div className="text-xs text-amber-100/80 mb-3">
-                {locale === 'fr'
-                  ? `Les prix datent d'environ ${Math.round(staleHours || 0)}h. Lance un refresh prix.`
-                  : `Prices are about ${Math.round(staleHours || 0)}h old. Trigger a price refresh.`}
-              </div>
-              <button
-                onClick={onRefreshPrices}
-                disabled={isRefreshPricesPending}
-                className="h-9 px-3 rounded-lg bg-amber-300/20 border border-amber-300/30 text-amber-100 text-xs font-semibold hover:bg-amber-300/30 transition-colors disabled:opacity-60"
-              >
-                {t('dashboard.refreshPrices')}
-              </button>
-            </div>
-          )}
-
-        </div>
-      )}
-
-      {/* PRICE ALERTS */}
-      <button className="feed-section-title w-full flex items-center justify-between mb-3 hover:text-white transition-colors" onClick={() => setShowAlerts(!showAlerts)}>
-        <span>{t('alerts.title')}</span>
-        <ChevronDown className={`w-4 h-4 transition-transform ${showAlerts ? '' : '-rotate-90'}`} />
-      </button>
-      {showAlerts && (
-        <div className="space-y-2 mb-6">
-          {priceAlerts.length > 0 ? (
-            <>
-              {(showAllAlerts ? priceAlerts : priceAlerts.slice(0, 5)).map(({ item, label, icon, colors, change, pct }) => (
-                <div key={item.marketHashName} className={`${colors.bg} rounded-xl p-3.5 border ${colors.border}`}>
-                  <div className="flex items-center justify-between mb-1">
-                    <div className={`flex items-center gap-1.5 text-xs font-semibold ${colors.text}`}>{icon} {label}</div>
-                    <div className="text-right">
-                      <span className="font-mono text-sm font-bold text-white">{formatEur(item.price, pp)}</span>
-                      <span className={`font-mono text-[11px] ml-2 ${change > 0 ? 'text-sf-green' : 'text-sf-pink'}`}>
-                        {change > 0 ? '+' : ''}{formatEur(change, pp)} ({formatPercent(pct)})
-                      </span>
-                    </div>
-                  </div>
-                  <div className="text-xs text-gray-400 truncate">{getDisplayItemName(item.marketHashName, item.wear?.name)}</div>
-                </div>
-              ))}
-              {priceAlerts.length > 5 && (
-                <button
-                  onClick={() => setShowAllAlerts(!showAllAlerts)}
-                  className="w-full py-1.5 text-xs text-sf-cyan hover:underline"
-                >
-                  {showAllAlerts ? t('feed.showLess') : t('feed.showAll')}
-                </button>
-              )}
-            </>
-          ) : (
-            <div className="bg-sf-card rounded-xl p-4 border border-dashed border-white/[0.06] text-sm text-gray-500">{t('alerts.noAlerts')}</div>
-          )}
-        </div>
-      )}
-
-      {/* CUSTOM PRICE ALERTS */}
-      <button className="feed-section-title w-full flex items-center justify-between mb-3 hover:text-white transition-colors" onClick={() => setShowCustomAlerts(!showCustomAlerts)}>
-        <span>{t('alerts.custom')}</span>
-        <ChevronDown className={`w-4 h-4 transition-transform ${showCustomAlerts ? '' : '-rotate-90'}`} />
-      </button>
-      {showCustomAlerts && (
-        <div className="space-y-2 mb-6">
-          {(customAlerts ?? []).length > 0 ? (
-            (customAlerts ?? []).map((alert) => (
-              <div
-                key={alert.id}
-                className={`rounded-xl p-3.5 border ${alert.triggeredAt ? 'bg-sf-cyan/[0.06] border-sf-cyan/25' : 'bg-sf-card border-white/[0.06]'}`}
-              >
-                <div className="flex items-center justify-between gap-2 mb-1">
-                  <span className="font-mono text-xs font-bold text-white whitespace-nowrap">
-                    {alert.direction === 'below' ? '≤' : '≥'} {formatEur(alert.thresholdEur)}
-                  </span>
-                  <div className="flex items-center gap-2">
-                    {alert.triggeredAt ? (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-sf-cyan whitespace-nowrap">
-                        <span className="w-1.5 h-1.5 rounded-full bg-sf-cyan" />
-                        {t('alerts.triggered')}
-                      </span>
-                    ) : (
-                      alert.currentPrice !== null && (
-                        <span className="font-mono text-[11px] text-gray-400 whitespace-nowrap">{formatEur(alert.currentPrice)}</span>
-                      )
-                    )}
-                    <button
-                      onClick={() => deleteAlertMutation.mutate({ id: alert.id, steamId })}
-                      disabled={deleteAlertMutation.isPending}
-                      aria-label={t('item.clear')}
-                      className="w-6 h-6 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] flex items-center justify-center transition-colors disabled:opacity-50"
-                    >
-                      <X className="w-3 h-3 text-gray-500" />
-                    </button>
-                  </div>
-                </div>
-                <div className="text-xs text-gray-400 truncate">{getDisplayItemName(alert.marketHashName)}</div>
-              </div>
-            ))
-          ) : (
-            <div className="bg-sf-card rounded-xl p-4 border border-dashed border-white/[0.06] text-sm text-gray-500">{t('alerts.none')}</div>
-          )}
-        </div>
-      )}
-
-      {/* DAILY HISTORY */}
-      <button className="feed-section-title w-full flex items-center justify-between mb-3 hover:text-white transition-colors" onClick={() => setShowHistory(!showHistory)}>
-        <span>{t('history.title')}</span>
-        <ChevronDown className={`w-4 h-4 transition-transform ${showHistory ? '' : '-rotate-90'}`} />
-      </button>
-      {showHistory && (
-        data.dailyHistory.length > 0 ? (
-          <div className="bg-sf-card rounded-xl border border-white/[0.06] overflow-hidden">
-            {(showAllHistory ? data.dailyHistory : data.dailyHistory.slice(0, 5)).map((entry) => {
-              const up = entry.change >= 0;
-              return (
-                <div key={entry.date} className="flex items-center justify-between gap-3 px-3.5 py-2.5 border-b border-white/[0.05] last:border-b-0">
-                  <span className="text-[11px] text-gray-500 whitespace-nowrap">{formatDate(entry.date, locale)}</span>
-                  <span className="flex items-baseline gap-2 font-mono min-w-0">
-                    <span className="text-sm font-bold text-white whitespace-nowrap">{formatEur(entry.value, pp)}</span>
-                    {entry.change !== 0 ? (
-                      <span className={`text-[11px] whitespace-nowrap ${up ? 'text-sf-green' : 'text-sf-pink'}`}>
-                        {up ? '+' : ''}{formatEur(entry.change, pp)} ({formatPercent(entry.changePercent)})
-                      </span>
-                    ) : (
-                      <span className="text-[11px] text-gray-600">—</span>
-                    )}
-                  </span>
-                </div>
-              );
-            })}
-            {data.dailyHistory.length > 5 && (
-              <button
-                onClick={() => setShowAllHistory(!showAllHistory)}
-                className="w-full py-2 text-xs text-sf-cyan hover:underline border-t border-white/[0.05]"
-              >
-                {showAllHistory ? t('feed.showLess') : t('feed.showAll')}
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="bg-sf-card rounded-xl p-4 border border-dashed border-white/[0.06] text-sm text-gray-500">{t('history.noHistory')}</div>
-        )
-      )}
-    </>
   );
 }
 

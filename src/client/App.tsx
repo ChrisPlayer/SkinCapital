@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Shield } from 'lucide-react';
 import { I18nProvider } from './lib/i18n.tsx';
 import { ToastProvider } from './components/toast.tsx';
+import { useEventToasts } from './hooks/useEvents.ts';
 
 // Route-level code splitting: each page is its own chunk, so the initial load
 // only ships what the landing route needs.
@@ -20,6 +21,13 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Bridges the server event journal to toasts. Rendered inside ToastProvider /
+// I18nProvider so the hook can reach both contexts.
+function EventToasts() {
+  useEventToasts();
+  return null;
+}
 
 function RouteFallback() {
   return (
@@ -45,6 +53,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       <I18nProvider>
         <ToastProvider>
+          <EventToasts />
           <BrowserRouter>
             <Suspense fallback={<RouteFallback />}>
               <Routes>

@@ -23,7 +23,7 @@ function OverviewBanner({ overview }: { overview: Overview }) {
   return (
     <section className="sf-card relative overflow-hidden p-6 mb-8">
       <div
-        className="pointer-events-none absolute -top-16 -left-12 w-96 h-56"
+        className="glow-grain pointer-events-none absolute -top-16 -left-12 w-96 h-56"
         style={{
           background:
             'radial-gradient(closest-side, color-mix(in srgb, var(--accent) 12%, transparent), transparent)',
@@ -107,12 +107,12 @@ export function ProfilesPage() {
       <header className="relative z-10 border-b border-white/[0.06]">
         <div className="max-w-5xl mx-auto px-6 py-6 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-1 h-6 rounded-full bg-[color:var(--accent)] shadow-[0_0_10px_var(--accent)]" />
+            <div className="w-1 h-6 rounded-full bg-[color:var(--accent)]" />
             <span className="font-display text-2xl font-bold">SkinCapital</span>
           </div>
           <button
             onClick={() => navigate('/login')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl btn-accent font-semibold text-sm glow-cyan"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl btn-accent font-semibold text-sm"
           >
             <Plus className="w-4 h-4" />
             {t('profiles.addAccount')}
@@ -134,6 +134,39 @@ export function ProfilesPage() {
           </div>
         ) : profiles && profiles.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {profiles.length > 1 && overview && (
+              <div
+                onClick={() => navigate('/profile/all')}
+                className="sf-card sf-card-hover p-6 cursor-pointer group"
+              >
+                <div className="flex items-center gap-3 mb-5">
+                  <div className="w-11 h-11 rounded-xl bg-[color:color-mix(in_srgb,var(--accent)_10%,transparent)] border border-[color:color-mix(in_srgb,var(--accent)_20%,transparent)] flex items-center justify-center">
+                    <Users className="w-5 h-5 text-[color:var(--accent)]" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-white truncate group-hover:text-[color:var(--accent)] transition-colors">
+                      {t('overview.allAccounts')}
+                    </p>
+                    <p className="text-[10px] text-sf-dim font-mono">
+                      {overview.profileCount} {t('overview.accounts').toLowerCase()}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <div className="nav-label mb-1">{t('profiles.items')}</div>
+                    <p className="font-mono text-base font-bold">{overview.totalItems}</p>
+                  </div>
+                  <div>
+                    <div className="nav-label mb-1">{t('profiles.value')}</div>
+                    <p className="font-mono text-base font-bold text-sf-cyan">{formatEur(overview.totalValue)}</p>
+                  </div>
+                </div>
+
+                <div className="font-mono text-[10px] text-sf-dim">{t('overview.allAccountsSubtitle')}</div>
+              </div>
+            )}
             {profiles.map((profile) => (
               <div
                 key={profile.steamId}
@@ -188,7 +221,7 @@ export function ProfilesPage() {
             </p>
             <button
               onClick={() => navigate('/login')}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl btn-accent font-semibold text-sm glow-cyan"
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl btn-accent font-semibold text-sm"
             >
               <LogIn className="w-4 h-4" />
               {t('auth.login')}

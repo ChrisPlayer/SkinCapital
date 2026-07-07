@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useInventoryStatus } from './useApi.ts';
+import type { SteamStatusInfo, LastRefreshResult } from '../../shared/types/api.ts';
 
 export function useRefreshPolling(
   steamId?: string,
@@ -32,5 +33,7 @@ export function useRefreshPolling(
     source: data?.source ?? null,
     lastRefresh: data?.lastRefresh ?? null,
     progress: data?.progress ?? null,
+    steam: (data?.steam ?? null) as SteamStatusInfo | null,
+    lastRefreshResult: (data?.lastRefreshResult ?? null) as LastRefreshResult | null,
   };
 }

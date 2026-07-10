@@ -24,9 +24,11 @@ export const helmetMiddleware = helmet({
       imgSrc: [
         "'self'",
         'data:',
-        'https://community.akamai.steamstatic.com',
-        'https://avatars.cloudflare.steamstatic.com',
-        'https://avatars.akamai.steamstatic.com',
+        // Steam sert les avatars/icônes depuis plusieurs CDN selon l'ancienneté
+        // du compte (steamstatic.com: cloudflare/akamai/fastly, et l'historique
+        // steamcdn-a.akamaihd.net encore présent dans les URLs de profil).
+        'https://*.steamstatic.com',
+        'https://*.akamaihd.net',
         'https://raw.githubusercontent.com',
       ],
       connectSrc: ["'self'"],

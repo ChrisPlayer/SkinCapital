@@ -1,4 +1,5 @@
 import axios from 'axios';
+import https from 'node:https';
 import { csfloatQueue, steamQueue } from './pricing.queue.ts';
 import {
   acquireSteamProxyWorker,
@@ -46,6 +47,18 @@ interface SteamFetchResult {
   reason: PriceFetchReason;
   cooldownMs: number;
 }
+
+// Shared agent for all direct (non-proxied) HTTPS calls: reuses sockets and TLS
+// sessions instead of paying a full handshake on every request.
+const keepAliveHttpsAgent = new https.Agent({ keepAlive: true });
+
+// Explicit Accept-Encoding so compressed responses never depend on axios
+// defaults; on the heavy Steam render endpoint this is a 3-5x size difference.
+const STEAM_HEADERS = {
+  Accept: 'application/json',
+  'Accept-Encoding': 'gzip, deflate, br',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+} as const;
 
 const inFlightSteamPrices = new Map<string, Promise<number | null>>();
 const inFlightSteamPriceResults = new Map<string, Promise<SteamFetchResult>>();
@@ -96,7 +109,8 @@ async function getSkinportMap(): Promise<Map<string, number>> {
       const res = await axios.get('https://api.skinport.com/v1/items', {
         params: { app_id: 730, currency: 'EUR' },
         timeout: 25000,
-        headers: { 'Accept-Encoding': 'br', Accept: 'application/json' },
+        httpsAgent: keepAliveHttpsAgent,
+        headers: { 'Accept-Encoding': 'br, gzip, deflate', Accept: 'application/json' },
       });
       const map = new Map<string, number>();
       const rows = (res.data as Array<{ market_hash_name?: string; suggested_price?: number | null; median_price?: number | null; min_price?: number | null }>) || [];
@@ -262,16 +276,16 @@ async function getSteamMarketPriceFromRender(
   const url = `https://steamcommunity.com/market/listings/730/${encodeURIComponent(marketHashName)}/render/`;
   const response = await axios.get(url, {
     timeout: 15000,
-    httpsAgent: getSteamProxyAgent(worker),
+    httpsAgent: getSteamProxyAgent(worker) ?? keepAliveHttpsAgent,
     proxy: false,
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    },
+    headers: STEAM_HEADERS,
     params: {
       query: '',
       start: 0,
-      count: 20,
+      // Listings come back sorted by ascending total price and we only keep the
+      // cheapest one; each extra listing ships its full asset description, so
+      // count=1 keeps the render response ~10-20x smaller.
+      count: 1,
       currency: 3,
       language: 'english',
     },
@@ -292,21 +306,26 @@ async function getSteamMarketPriceFromRender(
  * median_price for low-volume items) then the listings render fallback.
  */
 async function getSteamPriceDirectDetailed(marketHashName: string): Promise<SteamFetchResult> {
-  const headers = {
-    Accept: 'application/json',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-  };
-
   const result = await steamQueue.add(async (): Promise<SteamFetchResult> => {
     // 1) priceoverview
     try {
       const url = `https://steamcommunity.com/market/priceoverview/?appid=730&market_hash_name=${encodeURIComponent(marketHashName)}&currency=3`;
-      const response = await axios.get(url, { timeout: 15000, proxy: false, headers });
+      const response = await axios.get(url, {
+        timeout: 15000,
+        proxy: false,
+        headers: STEAM_HEADERS,
+        httpsAgent: keepAliveHttpsAgent,
+      });
       const overviewRaw = response.data?.lowest_price || response.data?.median_price;
       if (response.data?.success && overviewRaw) {
         const price = parseSteamPrice(overviewRaw);
         logger.debug(`[Price] Steam(direct): ${marketHashName} = €${price.toFixed(2)}`);
         return { price, reason: 'fresh', cooldownMs: 0 };
+      }
+      if (response.data?.success === true) {
+        // Overview answered cleanly but the item has no sell orders; the heavy
+        // render call would find nothing either.
+        return { price: null, reason: 'no_price', cooldownMs: 0 };
       }
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } }).response?.status;
@@ -323,8 +342,9 @@ async function getSteamPriceDirectDetailed(marketHashName: string): Promise<Stea
       const response = await axios.get(url, {
         timeout: 15000,
         proxy: false,
-        headers,
-        params: { query: '', start: 0, count: 20, currency: 3, language: 'english' },
+        headers: STEAM_HEADERS,
+        httpsAgent: keepAliveHttpsAgent,
+        params: { query: '', start: 0, count: 1, currency: 3, language: 'english' },
       });
       const price = parseSteamRenderPrice(response.data);
       if (price !== null) {
@@ -375,6 +395,7 @@ async function getSteamMarketPriceDetailed(marketHashName: string): Promise<Stea
 
     let overviewRateLimited = false;
     let overviewAttempted = false;
+    let overviewNoListings = false;
     let retryableFailure = false;
     let workerRejected = false;
 
@@ -386,12 +407,9 @@ async function getSteamMarketPriceDetailed(marketHashName: string): Promise<Stea
 
           const response = await axios.get(url, {
             timeout: 15000,
-            httpsAgent: getSteamProxyAgent(worker),
+            httpsAgent: getSteamProxyAgent(worker) ?? keepAliveHttpsAgent,
             proxy: false,
-            headers: {
-              Accept: 'application/json',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            },
+            headers: STEAM_HEADERS,
           });
 
           const overviewRaw = response.data?.lowest_price || response.data?.median_price;
@@ -405,6 +423,9 @@ async function getSteamMarketPriceDetailed(marketHashName: string): Promise<Stea
               cooldownMs: 0,
             };
           }
+          // A clean success=true answer with no price means the item has no
+          // sell orders; skip the heavy render fallback, it finds nothing too.
+          overviewNoListings = response.data?.success === true;
           logger.debug(
             `[Price] Steam overview(${worker.id}): no data for ${marketHashName} (success=${response.data?.success}, has_price=${!!overviewRaw})`,
           );
@@ -440,6 +461,15 @@ async function getSteamMarketPriceDetailed(marketHashName: string): Promise<Stea
           sawHardError = true;
           logger.error(`[Price] Steam overview error for ${marketHashName} via ${worker.id}:`, axiosErr.message);
         }
+      }
+
+      if (overviewNoListings) {
+        markSteamWorkerSuccess(worker);
+        return {
+          price: null,
+          reason: 'no_price',
+          cooldownMs: 0,
+        };
       }
 
       if (!workerRejected) {
@@ -557,8 +587,10 @@ async function getCsfloatMarketPrice(marketHashName: string): Promise<number | n
         try {
           const response = await axios.get('https://csfloat.com/api/v1/listings', {
             timeout: CSFLOAT_TIMEOUT_MS,
+            httpsAgent: keepAliveHttpsAgent,
             headers: {
               Accept: 'application/json',
+              'Accept-Encoding': 'gzip, deflate, br',
               ...authHeader,
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             },
@@ -566,7 +598,9 @@ async function getCsfloatMarketPrice(marketHashName: string): Promise<number | n
               market_hash_name: marketHashName,
               type: 'buy_now',
               sort_by: 'lowest_price',
-              limit: 5,
+              // Sorted by lowest price and only the minimum is kept: one
+              // listing is enough, and each listing is a large object (~2 KB).
+              limit: 1,
             },
           });
 

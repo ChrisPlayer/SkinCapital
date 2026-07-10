@@ -206,9 +206,10 @@ export async function testProxy(raw: string): Promise<{ ok: boolean; ip?: string
       return { ok: false, error: 'Resolution DNS impossible' };
     }
   }
+  const agent = makeAgent(cfg);
   try {
     const res = await axios.get('https://api.ipify.org?format=json', {
-      httpsAgent: makeAgent(cfg),
+      httpsAgent: agent,
       proxy: false,
       timeout: 12000,
       maxRedirects: 0, // a redirect could point the request at an internal host
@@ -217,6 +218,8 @@ export async function testProxy(raw: string): Promise<{ ok: boolean; ip?: string
   } catch (err) {
     const e = err as { response?: { status?: number }; message?: string };
     return { ok: false, error: e.response?.status ? `HTTP ${e.response.status}` : e.message || 'failed' };
+  } finally {
+    agent?.destroy(); // one-shot agent: don't keep the socket pooled
   }
 }
 
@@ -224,6 +227,10 @@ let workers: SteamProxyWorker[] = [];
 let refreshPromise: Promise<void> | null = null;
 let lastRefreshAt = 0;
 let nextPickIndex = 0;
+// Fingerprint of the paid-proxy config the current pool was built from; lets
+// periodic refreshes keep existing workers (and their keep-alive tunnels) when
+// nothing changed.
+let lastCustomProxyKey: string | null = null;
 let lastStatsLogAt = 0;
 
 function sleep(ms: number) {
@@ -298,9 +305,20 @@ function proxyToUrl(proxy: AxiosProxyConfig): string {
 
 // Tunnel HTTPS through the proxy via a real CONNECT agent. axios's built-in
 // `proxy` option mishandles authenticated HTTPS proxies (HPE_* / ECONNRESET).
+// keepAlive reuses the CONNECT tunnel + TLS session across requests: without it
+// every request pays a full handshake (~5-7 KB), billed by metered proxies.
 function makeAgent(proxy: AxiosProxyConfig | null | undefined): HttpsProxyAgent<string> | undefined {
   if (!proxy) return undefined;
-  return new HttpsProxyAgent(proxyToUrl(proxy));
+  return new HttpsProxyAgent(proxyToUrl(proxy), { keepAlive: true });
+}
+
+// Close pooled sockets of retired workers so keep-alive connections don't
+// accumulate across pool rebuilds. Busy workers are skipped: destroying their
+// agent would abort the request currently tunneled through it.
+function destroyWorkerAgents(retired: SteamProxyWorker[]) {
+  for (const worker of retired) {
+    if (!worker.busy) worker.agent?.destroy();
+  }
 }
 
 async function fetchProxySource(sourceUrl: string): Promise<Array<{ host: string; port: number }>> {
@@ -363,10 +381,11 @@ type ProxyProbeResult = {
 
 async function verifySteamProxy(proxy: AxiosProxyConfig): Promise<ProxyProbeResult> {
   const proxyLabel = `${proxy.host}:${proxy.port}`;
+  const agent = makeAgent(proxy);
   try {
     const response = await axios.get(STEAM_PROXY_VERIFY_URL, {
       timeout: STEAM_PROXY_VERIFY_TIMEOUT_MS,
-      httpsAgent: makeAgent(proxy),
+      httpsAgent: agent,
       proxy: false,
       validateStatus: () => true,
       headers: {
@@ -386,6 +405,8 @@ async function verifySteamProxy(proxy: AxiosProxyConfig): Promise<ProxyProbeResu
     const normalizedError = code || 'REQUEST_ERROR';
     logger.debug(`[Price] Steam proxy probe failed for ${proxyLabel}: ${message}`);
     return { ok: false, status: null, error: normalizedError };
+  } finally {
+    agent?.destroy(); // one-shot probe agent: don't keep the socket pooled
   }
 }
 
@@ -601,6 +622,8 @@ export async function ensureSteamProxyPool(force = false): Promise<void> {
 
   refreshPromise = (async () => {
     if (getPricingMode() === 'direct') {
+      destroyWorkerAgents(workers);
+      lastCustomProxyKey = null;
       workers = [
         {
           id: 'direct-1',
@@ -621,7 +644,16 @@ export async function ensureSteamProxyPool(force = false): Promise<void> {
     }
     const configuredProxies = getConfiguredProxies();
     if (configuredProxies.length > 0) {
+      const configKey = configuredProxies.join('\n');
+      if (!force && workers.length > 0 && configKey === lastCustomProxyKey) {
+        // Same paid proxies as last build: keep the workers (and their live
+        // keep-alive tunnels), just bump the staleness clock.
+        lastRefreshAt = Date.now();
+        return;
+      }
+      destroyWorkerAgents(workers);
       workers = buildCustomProxyWorkers();
+      lastCustomProxyKey = configKey;
       lastRefreshAt = Date.now();
       nextPickIndex = 0;
       const proxyCount = workers.filter((w) => !w.isDirect).length;
@@ -633,6 +665,8 @@ export async function ensureSteamProxyPool(force = false): Promise<void> {
     }
     const proxyPool = await fetchFreeProxies();
     const verifiedProxyPool = await verifyProxyPool(proxyPool);
+    destroyWorkerAgents(workers);
+    lastCustomProxyKey = null;
     workers = buildWorkers(verifiedProxyPool);
     lastRefreshAt = Date.now();
     nextPickIndex = 0;

@@ -12,6 +12,8 @@
 //     across weapons. Skipped rather than shown wrong.
 //   - Marble Fade "Fire & Ice": needs large per-knife curated seed tables. Skipped.
 
+import { cleanWeaponBase } from './item-names.ts';
+
 export type PatternTier = 'gold' | 'cyan' | 'pink' | 'neutral';
 
 export interface PatternTag {
@@ -59,15 +61,6 @@ const BLUE_GEM_SEEDS: Record<string, { gold: number[]; cyan: number[] }> = {
     cyan: [21, 670],
   },
 };
-
-function cleanWeaponBase(marketHashName: string): string {
-  // Strip quality/category prefixes, then take the weapon segment before " | ".
-  const noPrefix = marketHashName
-    .replace(/^★\s*/, '')
-    .replace(/^StatTrak™\s*/, '')
-    .replace(/^Souvenir\s*/, '');
-  return noPrefix.split(' | ')[0].trim();
-}
 
 function isFactoryNew(marketHashName: string, floatValue: number): boolean {
   // Trust an explicit wear suffix when present; otherwise fall back to the float band.

@@ -24,7 +24,6 @@ export interface Sticker {
 export interface ItemGroup {
   marketHashName: string;
   quantity: number;
-  items: Item[];
   casketIds: string[];
   floatValue: number | null;
   /** Paint seed of the representative unit (for rare-pattern detection). */

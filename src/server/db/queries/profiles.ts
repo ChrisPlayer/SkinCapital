@@ -12,6 +12,29 @@ export interface ProfileRow {
   created_at: string;
 }
 
+// Latest steam price per item — shared by every profile aggregate below so the
+// "current value" basis is identical everywhere (profile cards, overview).
+// ROW_NUMBER with an id tiebreaker: second-resolution timestamps can collide
+// on concurrent inserts, and a MAX(timestamp) join would then return BOTH rows
+// and inflate the SUM/COUNT aggregates built on top of this fragment.
+const LATEST_STEAM_PRICE_SQL = `
+  SELECT market_hash_name, price_eur FROM (
+    SELECT market_hash_name, price_eur,
+           ROW_NUMBER() OVER (PARTITION BY market_hash_name ORDER BY timestamp DESC, id DESC) AS rn
+    FROM prices WHERE source = 'steam'
+  ) WHERE rn = 1`;
+
+// Per-profile item count + steam-priced total, joined onto profiles by the
+// callers below.
+const PROFILE_SUMMARY_SQL = `
+  SELECT
+    i.steam_id,
+    COUNT(*) as item_count,
+    SUM(COALESCE(lp.price_eur, 0)) as total_value
+  FROM items i
+  LEFT JOIN (${LATEST_STEAM_PRICE_SQL}) lp ON lp.market_hash_name = i.market_hash_name
+  GROUP BY i.steam_id`;
+
 export function upsertProfile(
   steamId: string,
   username: string,
@@ -43,23 +66,7 @@ export function getAllProfiles(): ProfileRow[] {
         COALESCE(s.total_value, p.total_value, 0) as total_value,
         p.last_refresh, p.created_at
        FROM profiles p
-       LEFT JOIN (
-         SELECT
-           i.steam_id,
-           COUNT(*) as item_count,
-           SUM(COALESCE(lp.price_eur, 0)) as total_value
-         FROM items i
-         LEFT JOIN (
-           SELECT p1.market_hash_name, p1.price_eur
-           FROM prices p1
-           INNER JOIN (
-             SELECT market_hash_name, MAX(timestamp) as max_ts
-             FROM prices WHERE source = 'steam' GROUP BY market_hash_name
-           ) p2 ON p1.market_hash_name = p2.market_hash_name AND p1.timestamp = p2.max_ts
-           WHERE p1.source = 'steam'
-         ) lp ON lp.market_hash_name = i.market_hash_name
-         GROUP BY i.steam_id
-       ) s ON s.steam_id = p.steam_id
+       LEFT JOIN (${PROFILE_SUMMARY_SQL}) s ON s.steam_id = p.steam_id
        ORDER BY CASE WHEN p.last_refresh IS NULL THEN 1 ELSE 0 END, p.last_refresh DESC`,
     )
     .all() as ProfileRow[];
@@ -75,23 +82,7 @@ export function getProfileBySteamId(steamId: string): ProfileRow | undefined {
         COALESCE(s.total_value, p.total_value, 0) as total_value,
         p.last_refresh, p.created_at
        FROM profiles p
-       LEFT JOIN (
-         SELECT
-           i.steam_id,
-           COUNT(*) as item_count,
-           SUM(COALESCE(lp.price_eur, 0)) as total_value
-         FROM items i
-         LEFT JOIN (
-           SELECT p1.market_hash_name, p1.price_eur
-           FROM prices p1
-           INNER JOIN (
-             SELECT market_hash_name, MAX(timestamp) as max_ts
-             FROM prices WHERE source = 'steam' GROUP BY market_hash_name
-           ) p2 ON p1.market_hash_name = p2.market_hash_name AND p1.timestamp = p2.max_ts
-           WHERE p1.source = 'steam'
-         ) lp ON lp.market_hash_name = i.market_hash_name
-         GROUP BY i.steam_id
-       ) s ON s.steam_id = p.steam_id
+       LEFT JOIN (${PROFILE_SUMMARY_SQL}) s ON s.steam_id = p.steam_id
        WHERE p.steam_id = ?`,
     )
     .get(steamId) as ProfileRow | undefined;
@@ -125,21 +116,11 @@ export function getOverview(): OverviewResult {
     sqlite.prepare('SELECT COUNT(*) AS c FROM profiles').get() as { c: number }
   ).c;
 
-  // Latest steam price per item, joined onto every owned item row.
-  const latestSteamPrice = `
-    SELECT p1.market_hash_name, p1.price_eur
-    FROM prices p1
-    INNER JOIN (
-      SELECT market_hash_name, MAX(timestamp) as max_ts
-      FROM prices WHERE source = 'steam' GROUP BY market_hash_name
-    ) p2 ON p1.market_hash_name = p2.market_hash_name AND p1.timestamp = p2.max_ts
-    WHERE p1.source = 'steam'`;
-
   const totals = sqlite
     .prepare(
       `SELECT COUNT(*) AS totalItems, SUM(COALESCE(lp.price_eur, 0)) AS totalValue
        FROM items i
-       LEFT JOIN (${latestSteamPrice}) lp ON lp.market_hash_name = i.market_hash_name`,
+       LEFT JOIN (${LATEST_STEAM_PRICE_SQL}) lp ON lp.market_hash_name = i.market_hash_name`,
     )
     .get() as { totalItems: number | null; totalValue: number | null };
 
@@ -150,7 +131,7 @@ export function getOverview(): OverviewResult {
               MAX(i.icon_url) AS iconUrl,
               MAX(i.schema_image) AS schemaImage
        FROM items i
-       LEFT JOIN (${latestSteamPrice}) lp ON lp.market_hash_name = i.market_hash_name
+       LEFT JOIN (${LATEST_STEAM_PRICE_SQL}) lp ON lp.market_hash_name = i.market_hash_name
        GROUP BY i.market_hash_name
        HAVING SUM(COALESCE(lp.price_eur, 0)) > 0
        ORDER BY totalValue DESC
@@ -178,4 +159,40 @@ export function updateProfileSummary(
        WHERE steam_id = ?`,
     )
     .run(itemCount, totalValue, steamId);
+}
+
+/**
+ * Lightweight last_refresh lookup (no aggregate join) — used as the restart
+ * fallback when the in-memory "last sync" map is empty.
+ */
+export function getProfileLastRefresh(steamId: string): string | null {
+  const sqlite = getSqlite();
+  const row = sqlite
+    .prepare('SELECT last_refresh FROM profiles WHERE steam_id = ?')
+    .get(steamId) as { last_refresh: string | null } | undefined;
+  return row?.last_refresh ?? null;
+}
+
+export function profileExists(steamId: string): boolean {
+  const sqlite = getSqlite();
+  return !!sqlite.prepare('SELECT 1 FROM profiles WHERE steam_id = ?').get(steamId);
+}
+
+/**
+ * Delete a profile and every row that references it (items, purchases, price
+ * alerts, history) in ONE transaction. Returns false when the profile did not
+ * exist (nothing deleted).
+ */
+export function deleteProfileCascade(steamId: string): boolean {
+  const sqlite = getSqlite();
+  const tx = sqlite.transaction((id: string): boolean => {
+    const res = sqlite.prepare('DELETE FROM profiles WHERE steam_id = ?').run(id);
+    if (res.changes === 0) return false;
+    sqlite.prepare('DELETE FROM items WHERE steam_id = ?').run(id);
+    sqlite.prepare('DELETE FROM purchases WHERE steam_id = ?').run(id);
+    sqlite.prepare('DELETE FROM price_alerts WHERE steam_id = ?').run(id);
+    sqlite.prepare('DELETE FROM history WHERE steam_id = ?').run(id);
+    return true;
+  });
+  return tx(steamId);
 }

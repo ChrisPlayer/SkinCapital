@@ -4,6 +4,7 @@ import {
   setPricingConfig,
   clearPricingConfig,
   getResolvedMode,
+  reloadPricingConfig,
   type PricingMode,
 } from '../pricing/pricing.config.ts';
 import { testProxy } from '../pricing/steam.proxy-pool.ts';
@@ -14,13 +15,23 @@ import {
   isBackupEnabled,
   setBackupEnabled,
   runDailyBackup,
+  applyPriceRefreshSchedule,
+  isDailyRefreshRunning,
 } from '../inventory/inventory.jobs.ts';
 import {
   getLatestBackup,
   getLatestBackupPath,
+  getBackupPathByName,
   getBackupCount,
-  isBackupRunning,
+  listBackups,
+  restoreBackup,
 } from '../backup/backup.service.ts';
+import {
+  isRefreshInProgress,
+  isPriceRefreshInProgress,
+  clearAllRuntimeState,
+} from '../inventory/inventory.service.ts';
+import { logger } from '../../lib/logger.ts';
 import path from 'path';
 import { z } from 'zod';
 
@@ -78,23 +89,33 @@ router.post('/settings/backup', (req, res) => {
   res.json({ ok: true, enabled });
 });
 
-// Run a backup now. ran:false when one was already in progress (guarded).
+// Run a backup now. ran:false = one was already in progress (guarded);
+// a real write failure (disk full…) is a 500 so the UI can tell them apart.
 router.post('/settings/backup/run', (_req, res) => {
-  if (isBackupRunning()) {
-    return res.json({ ok: true, ran: false });
+  const result = runDailyBackup();
+  if (result === 'failed') {
+    return res.status(500).json({ error: 'Backup failed — check server logs' });
   }
-  const ran = runDailyBackup();
-  res.json({ ok: true, ran });
+  res.json({ ok: true, ran: result === 'ok' });
 });
 
-// Stream the newest backup as an attachment. The path comes only from the
-// service's own enumeration of data/backups (no traversal possible).
-router.get('/settings/backup/download', (_req, res) => {
-  const filePath = getLatestBackupPath();
+// All retained backups (newest first) for the settings page list.
+router.get('/settings/backup/list', (_req, res) => {
+  res.json(listBackups());
+});
+
+// Stream a backup as an attachment. Default: the newest one. With ?file=, the
+// name is validated against the service's own enumeration of data/backups
+// (strict membership — no traversal possible either way).
+router.get('/settings/backup/download', (req, res) => {
+  const requested = typeof req.query.file === 'string' ? req.query.file : null;
+  const filePath = requested ? getBackupPathByName(requested) : getLatestBackupPath();
   if (!filePath) {
     return res.status(404).json({ error: 'No backup available' });
   }
-  const downloadName = `cs2-backup-${new Date().toISOString().split('T')[0]}.json`;
+  // The stored name carries the backup's own timestamp — more truthful than
+  // "today" when the newest file is older than today.
+  const downloadName = requested ?? path.basename(filePath);
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
   res.sendFile(path.resolve(filePath), (err) => {
@@ -102,6 +123,41 @@ router.get('/settings/backup/download', (_req, res) => {
       res.status(500).json({ error: 'Failed to download backup' });
     }
   });
+});
+
+// Restore one retained backup (file name validated against the service's own
+// enumeration). Refused while any refresh runs — a live task would write rows
+// for state that no longer exists. The service snapshots the current state
+// first, so a restore is reversible.
+const restoreSchema = z.object({ file: z.string().min(1).max(200) });
+
+router.post('/settings/backup/restore', (req, res) => {
+  const parsed = restoreSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'file (string) required' });
+  }
+  if (isRefreshInProgress() || isPriceRefreshInProgress() || isDailyRefreshRunning()) {
+    return res.status(409).json({ error: 'A refresh is in progress — retry once it finishes' });
+  }
+  try {
+    const result = restoreBackup(parsed.data.file);
+    // The restored settings table may carry a different schedule / pricing
+    // config than what is cached in memory — re-read and re-arm both.
+    // reloadPricingConfig notifies the proxy pool WITHOUT re-persisting: if
+    // the restored proxies can't be decrypted (SESSION_SECRET changed), a
+    // re-persist would silently overwrite the restored row with the env
+    // fallback. The row stays restorable once the right secret is back.
+    clearAllRuntimeState();
+    const decryptOk = reloadPricingConfig();
+    if (!decryptOk) {
+      logger.warn('[Backup] Restored proxies undecryptable with the current SESSION_SECRET — kept the restored row, using .env proxies in memory.');
+    }
+    applyPriceRefreshSchedule();
+    logger.info(`[Backup] Restore of ${result.file} applied`);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+  }
 });
 
 // NOTE: writes are NOT behind Steam login — consistent with this LAN/personal

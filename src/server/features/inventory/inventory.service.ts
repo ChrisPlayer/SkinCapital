@@ -2,7 +2,6 @@ import { getAllInventory } from '../steam/steam.inventory.ts';
 import { steamClient } from '../steam/steam.client.ts';
 import { initialize as initSchema } from '../steam/steam.schema.ts';
 import {
-  getCachedPrices,
   getPrices,
   refreshPriceWithoutStaleFallback,
   getSteamWorkerPoolSnapshot,
@@ -17,19 +16,21 @@ import {
   countItemsByProfile,
   getItemsByProfile,
 } from '../../db/queries/items.ts';
-import { updateProfileSummary } from '../../db/queries/profiles.ts';
+import { updateProfileSummary, getProfileLastRefresh, profileExists } from '../../db/queries/profiles.ts';
 import { getPurchasesByProfile } from '../../db/queries/purchases.ts';
 import {
   getAllLatestPricesBySource,
   getAllPreviousPricesBySource,
   getLatestPriceWindowBySource,
+  getLatestPricesForNames,
 } from '../../db/queries/prices.ts';
+import { getSetting, setSetting, deleteSetting } from '../../db/queries/settings.ts';
 import { getItemRarity, getItemQuality } from '../../../shared/constants/rarity.ts';
 import { getRarityForName } from '../steam/steam.schema.ts';
 import { getWearFromMarketHashName, getWearLevel } from '../../../shared/constants/wear.ts';
 import { logger } from '../../lib/logger.ts';
 import type { ItemGroup, StorageUnit, Sticker } from '../../../shared/types/inventory.ts';
-import type { ChangeInfo, DashboardData, DailyHistoryEntry } from '../../../shared/types/api.ts';
+import type { ChangeInfo, DashboardData, DailyHistoryEntry, RefreshOutcome } from '../../../shared/types/api.ts';
 import type { StorageUnitFetchSummary } from '../steam/steam.inventory.ts';
 
 export type PriceRefreshScope = 'all' | 'stale_or_missing' | 'missing';
@@ -48,6 +49,7 @@ interface PriceRefreshProgressState {
 let lastRefresh: Date | null = null;
 let isRefreshing = false;
 let currentRefreshSteamId: string | null = null;
+const lastRefreshOutcomeBySteamId = new Map<string, RefreshOutcome>();
 const activePriceRefreshes = new Map<string, PriceRefreshTaskState>();
 const storageSummaryBySteamId = new Map<string, StorageUnitFetchSummary>();
 const priceRefreshProgressBySteamId = new Map<string, PriceRefreshProgressState>();
@@ -93,6 +95,52 @@ const PRICE_REFRESH_MAX_ITEMS_PER_CYCLE = Math.max(
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Anti-drop guard for history snapshots: refuse to record a total that
+ * collapsed below 20% of yesterday's value — that shape is a partial price
+ * fetch, not a real market move. Exported for tests.
+ */
+export function isSuspiciousDrop(totalValue: number, changeInfo: ChangeInfo): boolean {
+  return Boolean(
+    changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2,
+  );
+}
+
+function recordRefreshOutcome(steamId: string, outcome: Omit<RefreshOutcome, 'at'>) {
+  lastRefreshOutcomeBySteamId.set(steamId, { ...outcome, at: new Date().toISOString() });
+}
+
+export function getLastRefreshOutcome(steamId: string): RefreshOutcome | null {
+  return lastRefreshOutcomeBySteamId.get(steamId) ?? null;
+}
+
+// The storage-unit summary (empty/loaded unit counts) is persisted so a server
+// restart doesn't show "0 empty storage units" until the next Steam login.
+const STORAGE_SUMMARY_KEY_PREFIX = 'storage_summary:';
+
+function persistStorageSummary(steamId: string, summary: StorageUnitFetchSummary) {
+  storageSummaryBySteamId.set(steamId, summary);
+  try {
+    setSetting(`${STORAGE_SUMMARY_KEY_PREFIX}${steamId}`, JSON.stringify(summary));
+  } catch (err) {
+    logger.warn('[Inventory] Failed to persist storage summary:', (err as Error).message);
+  }
+}
+
+function getStorageSummary(steamId: string): StorageUnitFetchSummary | undefined {
+  const inMemory = storageSummaryBySteamId.get(steamId);
+  if (inMemory) return inMemory;
+  try {
+    const raw = getSetting(`${STORAGE_SUMMARY_KEY_PREFIX}${steamId}`);
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as StorageUnitFetchSummary;
+    storageSummaryBySteamId.set(steamId, parsed);
+    return parsed;
+  } catch {
+    return undefined;
+  }
 }
 
 function markPriceRefreshCompleted(steamId: string, source: PriceSource, at: Date) {
@@ -181,7 +229,8 @@ function clearNoFreshPriceChecked(steamId: string, source: PriceSource, name: st
   }
 }
 
-function takeCyclicWindow<T>(items: T[], size: number, start: number): { window: T[]; nextStart: number } {
+// Exported for tests.
+export function takeCyclicWindow<T>(items: T[], size: number, start: number): { window: T[]; nextStart: number } {
   if (size <= 0 || items.length === 0 || size >= items.length) {
     return { window: items, nextStart: 0 };
   }
@@ -220,14 +269,31 @@ async function runWithConcurrency<T>(
   await Promise.all(runners);
 }
 
+function getInventoryLastRefresh(steamId: string): Date | null {
+  const inMemory = lastInventoryRefreshBySteamId.get(steamId);
+  if (inMemory) return inMemory;
+  // Restart fallback: profiles.last_refresh survives the process.
+  const persisted = getProfileLastRefresh(steamId);
+  if (persisted) {
+    const ms = getPriceTimestampMs(persisted);
+    if (ms) return new Date(ms);
+  }
+  return null;
+}
+
 export function getLastRefresh(steamId?: string, source?: PriceSource) {
   if (steamId) {
     if (source) {
       const bySource = lastPriceRefreshBySteamId.get(steamId)?.[source] ?? null;
-      if (bySource) return bySource;
-      if (source === 'csfloat' || source === 'skinport') return null;
+      if (source === 'csfloat' || source === 'skinport') return bySource;
+      // steam: the NEWER of the last price refresh and the last full inventory
+      // refresh — an inventory refresh also re-prices, so it must never show
+      // an older "last sync" than a prior price-only pass.
+      const inventoryAt = getInventoryLastRefresh(steamId);
+      if (bySource && inventoryAt) return bySource > inventoryAt ? bySource : inventoryAt;
+      return bySource ?? inventoryAt;
     }
-    return lastInventoryRefreshBySteamId.get(steamId) ?? null;
+    return getInventoryLastRefresh(steamId);
   }
   return lastRefresh;
 }
@@ -294,11 +360,27 @@ export async function refresh(steamId: string, force = false) {
 
   try {
     logger.info(`[Inventory] Starting full refresh for ${steamId}...`);
+
+    // The profile row is created at login; if it was deleted mid-session, a
+    // refresh would silently re-insert items/history with no profile card
+    // (orphans in the overview). Bail instead — logging in again recreates it.
+    if (!profileExists(steamId)) {
+      steamClient.logout();
+      logger.warn(`[Inventory] Refresh refused: profile ${steamId} no longer exists (deleted). Log in again to re-create it.`);
+      recordRefreshOutcome(steamId, {
+        success: false,
+        error: 'profile_deleted',
+        detail: null,
+        kept: null,
+        itemCount: null,
+      });
+      return { success: false, error: 'profile_deleted' };
+    }
+
     await initSchema();
 
     const inventoryResult = await getAllInventory();
     const items = inventoryResult.items;
-    storageSummaryBySteamId.set(steamId, inventoryResult.storageSummary);
 
     // Anti-wipe guard: a transient Steam/GC error can return 0 items OR a
     // failed main fetch. Never replace a non-empty inventory with an empty
@@ -314,7 +396,20 @@ export async function refresh(steamId: string, force = false) {
       logger.warn(
         `[Inventory] Aborting replace for ${steamId}: ${detail}; keeping existing ${previousCount} items. Re-run with force to override.`,
       );
+      recordRefreshOutcome(steamId, {
+        success: false,
+        error: 'fetch_incomplete',
+        detail,
+        kept: previousCount,
+        itemCount: null,
+      });
       return { success: false, error: 'fetch_incomplete', kept: previousCount, detail };
+    }
+    // Only remember a summary whose enumeration actually succeeded — an
+    // aborted fetch OR a GC-less partial refresh (enumerated=false, all counts
+    // zero) must not clobber the last good storage-unit counts.
+    if (inventoryResult.storageSummary.enumerated) {
+      persistStorageSummary(steamId, inventoryResult.storageSummary);
     }
     if (!force && previousCount > 0 && !inventoryResult.storageComplete) {
       // Main inventory is fresh but storage units could not be (fully) read —
@@ -337,22 +432,14 @@ export async function refresh(steamId: string, force = false) {
     steamClient.logout();
     logger.info('[Inventory] Steam session disconnected after inventory extraction');
 
-    const itemCountByName = new Map<string, number>();
-    for (const item of items) {
-      itemCountByName.set(item.marketHashName, (itemCountByName.get(item.marketHashName) || 0) + 1);
-    }
-    const uniqueNames = [...itemCountByName.keys()];
+    const uniqueNames = [...new Set(items.map((i) => i.marketHashName))];
     inventoryRefreshProgress = { fetched: 0, total: uniqueNames.length };
     logger.info(`[Inventory] Fetching prices for ${uniqueNames.length} unique items...`);
 
-    let totalValue = 0;
     await runWithConcurrency(uniqueNames, PRICE_FETCH_CONCURRENCY, async (name) => {
       try {
-        const prices = await getPrices(name, false, 'steam');
-        const itemCount = itemCountByName.get(name) || 0;
-        if (prices.average) {
-          totalValue += prices.average * itemCount;
-        }
+        // Warms the price cache; the total is recomputed from it below.
+        await getPrices(name, false, 'steam');
       } catch (err) {
         logger.error(`[Inventory] Price fetch error for ${name}:`, (err as Error).message);
       } finally {
@@ -365,15 +452,14 @@ export async function refresh(steamId: string, force = false) {
       }
     });
 
-    // Recompute from the cache so the snapshot includes sticker values \u2014 the
+    // Compute from the cache so the snapshot includes sticker values \u2014 the
     // same basis as the dashboard total it will be compared against.
-    const finalTotal = computeSourceTotal(getItemsByProfile(steamId), 'steam');
-    totalValue = finalTotal.totalValue;
+    const totalValue = computeSourceTotal(getItemsByProfile(steamId), 'steam').totalValue;
 
     const changeInfo = historyService.get24hChange(steamId, totalValue);
 
-    if (changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2) {
-      logger.warn(`[History] SKIPPING SNAPSHOT: Calculated value \u20ac${totalValue.toFixed(2)} is suspiciously low compared to yesterday (\u20ac${changeInfo.yesterdayValue.toFixed(2)}). Preserving history.`);
+    if (isSuspiciousDrop(totalValue, changeInfo)) {
+      logger.warn(`[History] SKIPPING SNAPSHOT: Calculated value \u20ac${totalValue.toFixed(2)} is suspiciously low compared to yesterday (\u20ac${changeInfo.yesterdayValue!.toFixed(2)}). Preserving history.`);
     } else {
       historyService.saveSnapshot(steamId, totalValue, persistedCount);
     }
@@ -386,9 +472,23 @@ export async function refresh(steamId: string, force = false) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     logger.info(`[Inventory] Refresh complete in ${duration}s. Total value: \u20ac${totalValue.toFixed(2)}`);
 
+    recordRefreshOutcome(steamId, {
+      success: true,
+      error: null,
+      detail: null,
+      kept: null,
+      itemCount: persistedCount,
+    });
     return { success: true, itemCount: persistedCount, totalValue, duration: parseFloat(duration) };
   } catch (err) {
     logger.error('[Inventory] Refresh failed:', err);
+    recordRefreshOutcome(steamId, {
+      success: false,
+      error: (err as Error).message,
+      detail: null,
+      kept: null,
+      itemCount: null,
+    });
     return { success: false, error: (err as Error).message };
   } finally {
     isRefreshing = false;
@@ -397,7 +497,8 @@ export async function refresh(steamId: string, force = false) {
   }
 }
 
-function groupItems(
+// Exported for tests.
+export function groupItems(
   rawItems: Array<{
     marketHashName: string;
     assetId: string | null;
@@ -469,7 +570,6 @@ function groupItems(
     result.push({
       marketHashName: name,
       quantity: data.quantity,
-      items: [],
       casketIds: [...data.casketIds],
       floatValue: floatVal,
       paintSeed,
@@ -523,7 +623,8 @@ function getPriceTimestampMs(timestamp: string | null | undefined): number | nul
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function getNamesToRefresh(
+// Exported for tests (reads the latest prices from the DB).
+export function getNamesToRefresh(
   rawItems: Array<{ marketHashName: string }>,
   source: PriceSource,
   scope: PriceRefreshScope,
@@ -561,9 +662,9 @@ function getNamesToRefresh(
 /**
  * Source total from the latest cached prices, STICKER VALUES INCLUDED — the
  * same basis as the dashboard total, so history snapshots and the 24h change
- * compare like with like.
+ * compare like with like. Exported for tests.
  */
-function computeSourceTotal(
+export function computeSourceTotal(
   rawItems: ReturnType<typeof getItemsByProfile>,
   source: PriceSource,
 ): { totalValue: number; pricedItems: number } {
@@ -594,7 +695,7 @@ export function getDashboardData(
   priceSource: PriceSource = 'steam',
 ): DashboardData {
   const rawItems = getItemsByProfile(steamId);
-  const storageSummary = storageSummaryBySteamId.get(steamId);
+  const storageSummary = getStorageSummary(steamId);
 
   // Build price map for selected source
   const latestPrices = getAllLatestPricesBySource(priceSource);
@@ -603,19 +704,23 @@ export function getDashboardData(
     priceMap.set(p.market_hash_name, p.price_eur);
   }
 
-  // Also compute sticker prices
+  // Sticker prices: collect the names not already priced, then ONE batched
+  // lookup (this used to be one SQL round-trip per unknown sticker per poll).
+  const missingStickerNames = new Set<string>();
   for (const item of rawItems) {
     const stickers = parseStickers(item.stickers);
-    if (stickers) {
-      for (const s of stickers) {
-        if (!priceMap.has(s.name)) {
-          const cached = getCachedPrices(s.name);
-          priceMap.set(
-            s.name,
-            priceSource === 'csfloat' ? cached.csfloat : priceSource === 'skinport' ? cached.skinport : cached.steam,
-          );
-        }
-      }
+    if (!stickers) continue;
+    for (const s of stickers) {
+      if (!priceMap.has(s.name)) missingStickerNames.add(s.name);
+    }
+  }
+  if (missingStickerNames.size > 0) {
+    for (const row of getLatestPricesForNames([...missingStickerNames], priceSource)) {
+      priceMap.set(row.market_hash_name, row.price_eur);
+    }
+    // Names without any price row stay explicitly unpriced.
+    for (const name of missingStickerNames) {
+      if (!priceMap.has(name)) priceMap.set(name, null);
     }
   }
 
@@ -629,16 +734,6 @@ export function getDashboardData(
   const allGrouped = groupItems(rawItems, priceMap, previousPriceMap);
   applyBuyPrices(allGrouped, purchases);
   const totalValue = allGrouped.reduce((sum, g) => sum + g.total, 0);
-
-  // Invested / P&L over groups that have a purchase price (null when none do).
-  let invested: number | null = null;
-  let pnl: number | null = null;
-  for (const group of allGrouped) {
-    if (group.buyPrice === null) continue;
-    const cost = group.buyPrice * group.quantity;
-    invested = (invested ?? 0) + cost;
-    pnl = (pnl ?? 0) + (group.total - cost);
-  }
 
   // Main inventory
   const mainRaw = rawItems.filter((i) => !i.casketId);
@@ -713,13 +808,46 @@ export function getDashboardData(
     totalItems: rawItems.length,
     uniqueItems: allGrouped.length,
     totalValue,
-    invested,
-    pnl,
     change24h,
     historyData,
     dailyHistory,
     priceWindow,
   };
+}
+
+/** Forget every in-memory trace of a profile (used by DELETE /profiles). */
+export function clearProfileRuntimeState(steamId: string) {
+  cancelPriceRefresh(steamId);
+  storageSummaryBySteamId.delete(steamId);
+  lastInventoryRefreshBySteamId.delete(steamId);
+  lastPriceRefreshBySteamId.delete(steamId);
+  lastRefreshOutcomeBySteamId.delete(steamId);
+  for (const source of ['steam', 'csfloat', 'skinport']) {
+    const key = `${steamId}:${source}`;
+    missingPriceChecksByProfileSource.delete(key);
+    noFreshPriceChecksByProfileSource.delete(key);
+    staleRefreshCursorByProfileSource.delete(key);
+  }
+  try {
+    deleteSetting(`${STORAGE_SUMMARY_KEY_PREFIX}${steamId}`);
+  } catch {
+    /* cosmetic leftover only */
+  }
+}
+
+/** Drop ALL per-profile runtime state (used after a backup restore). */
+export function clearAllRuntimeState() {
+  for (const steamId of [...activePriceRefreshes.keys()]) {
+    cancelPriceRefresh(steamId);
+  }
+  storageSummaryBySteamId.clear();
+  priceRefreshProgressBySteamId.clear();
+  lastInventoryRefreshBySteamId.clear();
+  lastPriceRefreshBySteamId.clear();
+  lastRefreshOutcomeBySteamId.clear();
+  missingPriceChecksByProfileSource.clear();
+  noFreshPriceChecksByProfileSource.clear();
+  staleRefreshCursorByProfileSource.clear();
 }
 
 export async function refreshPrices(
@@ -801,7 +929,7 @@ export async function refreshPrices(
       const cachedTotal = computeSourceTotal(rawItems, source);
       if (cachedTotal.pricedItems > 0) {
         const changeInfo = historyService.get24hChange(steamId, cachedTotal.totalValue, source);
-        if (!(changeInfo.hasData && changeInfo.yesterdayValue && cachedTotal.totalValue < changeInfo.yesterdayValue * 0.2)) {
+        if (!isSuspiciousDrop(cachedTotal.totalValue, changeInfo)) {
           historyService.saveSnapshot(steamId, cachedTotal.totalValue, rawItems.length, source);
         }
       }
@@ -1101,7 +1229,7 @@ export async function refreshPrices(
     // Per-source daily snapshot (steam/csfloat/skinport each get their own
     // history line, so the 24h change works for every source).
     const changeInfo = historyService.get24hChange(steamId, totalValue, source);
-    if (changeInfo.hasData && changeInfo.yesterdayValue && totalValue < changeInfo.yesterdayValue * 0.2) {
+    if (isSuspiciousDrop(totalValue, changeInfo)) {
       logger.warn(`[Prices] SKIPPING ${source} SNAPSHOT: value too low compared to yesterday`);
     } else {
       historyService.saveSnapshot(steamId, totalValue, rawItems.length, source);

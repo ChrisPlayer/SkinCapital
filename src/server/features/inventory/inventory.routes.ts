@@ -12,6 +12,7 @@ import {
   getRefreshProgress,
   getPriceRefreshProgress,
   getLastRefresh,
+  getLastRefreshOutcome,
 } from './inventory.service.ts';
 import { requireSteamConnection } from '../auth/auth.middleware.ts';
 import { logger } from '../../lib/logger.ts';
@@ -108,6 +109,9 @@ router.get('/inventory/status', (req, res) => {
     source: syncType === 'prices' ? activePriceSource : null,
     lastRefresh: getLastRefresh(steamId, requestedSource)?.toISOString() ?? null,
     progress,
+    // Lets the client explain a refresh that ended without changing anything
+    // (e.g. the anti-wipe abort) instead of silently stopping the spinner.
+    lastOutcome: steamId ? getLastRefreshOutcome(steamId) : null,
   });
 });
 

@@ -3,8 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import { logger } from '../lib/logger.ts';
 
-const DB_PATH = path.join(process.cwd(), 'data', 'inventory.db');
-
 let sqlite: Database.Database | null = null;
 
 export function getSqlite() {
@@ -15,9 +13,14 @@ export function getSqlite() {
 }
 
 export function initDb() {
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  // DB_PATH env override exists for the tests (':memory:'); resolved lazily so
+  // a test can set it before calling initDb().
+  const dbPath = process.env.DB_PATH || path.join(process.cwd(), 'data', 'inventory.db');
+  if (dbPath !== ':memory:') {
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  }
 
-  sqlite = new Database(DB_PATH);
+  sqlite = new Database(dbPath);
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('foreign_keys = ON');
   // Avoid SQLITE_BUSY when the cron price refresh and a manual refresh write concurrently.

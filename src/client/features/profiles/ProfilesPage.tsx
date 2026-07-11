@@ -1,11 +1,12 @@
 import { useNavigate } from 'react-router-dom';
-import { useProfiles, useOverview } from '../../hooks/useApi.ts';
+import { useProfiles, useOverview, useDeleteProfile } from '../../hooks/useApi.ts';
 import { useI18n } from '../../lib/i18n.tsx';
 import { useCountUp } from '../../hooks/useCountUp.ts';
 import { formatEur, formatDate } from '../../lib/formatters.ts';
-import type { Overview } from '../../../shared/types/api.ts';
+import { useToast } from '../../components/toast.tsx';
+import type { Overview, Profile } from '../../../shared/types/api.ts';
 import { getDisplayItemName } from '../../lib/item-display.ts';
-import { Plus, LogIn, Package, Loader2, Wallet, Users } from 'lucide-react';
+import { Plus, LogIn, Package, Loader2, Wallet, Users, Trash2, Settings } from 'lucide-react';
 
 const COUNT_FORMATTERS: Record<'fr' | 'en', Intl.NumberFormat> = {
   fr: new Intl.NumberFormat('fr-FR'),
@@ -96,9 +97,20 @@ function OverviewBanner({ overview }: { overview: Overview }) {
 
 export function ProfilesPage() {
   const navigate = useNavigate();
-  const { data: profiles, isLoading } = useProfiles();
+  const { data: profiles, isLoading, isError, refetch } = useProfiles();
   const { data: overview } = useOverview();
   const { t, locale } = useI18n();
+  const toast = useToast();
+  const deleteProfile = useDeleteProfile();
+
+  const handleDeleteProfile = (profile: Profile) => {
+    // Native confirm is enough here: rare, deliberate, destructive action.
+    if (!window.confirm(t('profiles.deleteConfirm'))) return;
+    deleteProfile.mutate(profile.steamId, {
+      onSuccess: () => toast.success(t('toast.profileDeleted')),
+      onError: (err) => toast.error((err as Error).message),
+    });
+  };
 
   return (
     <div className="min-h-screen relative">
@@ -110,13 +122,23 @@ export function ProfilesPage() {
             <div className="w-1 h-6 rounded-full bg-[color:var(--accent)] shadow-[0_0_10px_var(--accent)]" />
             <span className="font-display text-2xl font-bold">SkinCapital</span>
           </div>
-          <button
-            onClick={() => navigate('/login')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl btn-accent font-semibold text-sm glow-cyan"
-          >
-            <Plus className="w-4 h-4" />
-            {t('profiles.addAccount')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate('/login')}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl btn-accent font-semibold text-sm glow-cyan"
+            >
+              <Plus className="w-4 h-4" />
+              {t('profiles.addAccount')}
+            </button>
+            <button
+              onClick={() => navigate('/settings')}
+              aria-label={t('nav.settings')}
+              title={t('nav.settings')}
+              className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -132,14 +154,33 @@ export function ProfilesPage() {
           <div className="flex items-center justify-center py-20">
             <Loader2 className="w-6 h-6 animate-spin text-sf-cyan" />
           </div>
+        ) : isError ? (
+          <div className="text-center py-20">
+            <p className="text-sm text-red-400 mb-4">{t('profiles.loadError')}</p>
+            <button
+              onClick={() => refetch()}
+              className="px-4 py-2 rounded-lg bg-sf-cyan/10 text-sf-cyan text-sm hover:bg-sf-cyan/20"
+            >
+              {t('common.retry')}
+            </button>
+          </div>
         ) : profiles && profiles.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {profiles.map((profile) => (
               <div
                 key={profile.steamId}
                 onClick={() => navigate(`/profile/${profile.steamId}`)}
-                className="sf-card sf-card-hover p-6 cursor-pointer group"
+                className="sf-card sf-card-hover p-6 cursor-pointer group relative"
               >
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteProfile(profile); }}
+                  disabled={deleteProfile.isPending}
+                  aria-label={t('profiles.delete')}
+                  title={t('profiles.delete')}
+                  className="absolute top-3 right-3 w-8 h-8 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-500 opacity-60 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 hover:text-sf-pink hover:border-sf-pink/40 transition-all disabled:opacity-40"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
                 <div className="flex items-center gap-3 mb-5">
                   {profile.avatarUrl ? (
                     <img
@@ -156,7 +197,7 @@ export function ProfilesPage() {
                     <p className="font-semibold text-white truncate group-hover:text-sf-cyan transition-colors">
                       {profile.personaName || profile.username}
                     </p>
-                    <p className="text-[10px] text-sf-dim font-mono">{profile.username}</p>
+                    <p className="text-[10px] text-gray-500 font-mono">{profile.username}</p>
                   </div>
                 </div>
 
@@ -171,7 +212,7 @@ export function ProfilesPage() {
                   </div>
                 </div>
 
-                <div className="font-mono text-[10px] text-sf-dim">
+                <div className="font-mono text-[10px] text-gray-500">
                   {profile.lastRefresh
                     ? `${t('profiles.lastSync')}: ${formatDate(profile.lastRefresh, locale)}`
                     : t('profiles.neverSynced')}

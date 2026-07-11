@@ -37,6 +37,9 @@ export function useDashboardData(
     queryFn: () => api.dashboard(steamId, days, source),
     enabled: !!steamId,
     refetchInterval: isRefreshing ? 5000 : 60000,
+    // Keep showing the previous days/source data while the new key loads, so
+    // toggling 7/30/90 or the price source never flashes the full skeleton.
+    placeholderData: (prev) => prev,
   });
 }
 
@@ -172,6 +175,38 @@ export function useRunBackup() {
     mutationFn: () => api.settings.runBackup(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['backup-settings'] });
+      queryClient.invalidateQueries({ queryKey: ['backup-list'] });
+    },
+  });
+}
+
+export function useBackupList(enabled: boolean) {
+  return useQuery({
+    queryKey: ['backup-list'],
+    queryFn: () => api.settings.listBackups(),
+    enabled,
+  });
+}
+
+export function useRestoreBackup() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: string) => api.settings.restoreBackup(file),
+    // A restore replaces profiles/items/history/settings wholesale — every
+    // cached query is potentially stale.
+    onSuccess: () => {
+      queryClient.invalidateQueries();
+    },
+  });
+}
+
+export function useDeleteProfile() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (steamId: string) => api.profiles.remove(steamId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profiles'] });
+      queryClient.invalidateQueries({ queryKey: ['overview'] });
     },
   });
 }

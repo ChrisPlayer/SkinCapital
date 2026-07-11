@@ -8,6 +8,7 @@ import type {
   MoversResponse,
   Overview,
   ApiError,
+  BackupFileInfo,
 } from '../../shared/types/api.ts';
 
 const BASE = '/api';
@@ -51,6 +52,8 @@ export const api = {
   profiles: {
     list: () => request<Profile[]>('/profiles'),
     get: (steamId: string) => request<Profile>(`/profiles/${encodeURIComponent(steamId)}`),
+    remove: (steamId: string) =>
+      request<{ ok: boolean }>(`/profiles/${encodeURIComponent(steamId)}`, { method: 'DELETE' }),
   },
 
   overview: () => request<Overview>('/overview'),
@@ -165,6 +168,13 @@ export const api = {
       }),
     runBackup: () =>
       request<{ ok: boolean; ran: boolean }>('/settings/backup/run', { method: 'POST' }),
-    backupDownloadUrl: () => `${BASE}/settings/backup/download`,
+    backupDownloadUrl: (file?: string) =>
+      `${BASE}/settings/backup/download${file ? `?file=${encodeURIComponent(file)}` : ''}`,
+    listBackups: () => request<BackupFileInfo[]>('/settings/backup/list'),
+    restoreBackup: (file: string) =>
+      request<{ ok: boolean; file: string; tables: Record<string, number> }>(
+        '/settings/backup/restore',
+        { method: 'POST', body: JSON.stringify({ file }) },
+      ),
   },
 };

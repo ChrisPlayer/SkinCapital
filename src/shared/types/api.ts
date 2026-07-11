@@ -40,10 +40,6 @@ export interface DashboardData {
   totalItems: number;
   uniqueItems: number;
   totalValue: number;
-  /** Sum of buyPrice x quantity over groups with a purchase price (null when no purchases). */
-  invested: number | null;
-  /** Sum of (group.total - buyPrice x quantity) over those groups (null when no purchases). */
-  pnl: number | null;
   change24h: ChangeInfo;
   historyData: HistoryPoint[];
   dailyHistory: DailyHistoryEntry[];
@@ -74,6 +70,27 @@ export interface InventoryStatus {
   source: 'steam' | 'csfloat' | 'skinport' | null;
   lastRefresh: string | null;
   progress: RefreshProgress | null;
+  /** Outcome of the last FULL inventory refresh (null before the first one). */
+  lastOutcome: RefreshOutcome | null;
+}
+
+/** Result of the last full inventory refresh — lets the UI explain a failure. */
+export interface RefreshOutcome {
+  success: boolean;
+  /** 'fetch_incomplete' for the anti-wipe abort, otherwise an error message. */
+  error: string | null;
+  detail: string | null;
+  /** Items kept in DB when an incomplete fetch was refused. */
+  kept: number | null;
+  itemCount: number | null;
+  at: string;
+}
+
+/** One retained backup file (settings page list). */
+export interface BackupFileInfo {
+  file: string;
+  when: string;
+  sizeBytes: number;
 }
 
 export interface RefreshProgress {

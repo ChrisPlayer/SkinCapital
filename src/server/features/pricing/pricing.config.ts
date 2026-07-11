@@ -31,6 +31,9 @@ const ENV_MODE: PricingMode = (() => {
 
 let config: PricingConfig = { mode: ENV_MODE, proxies: ENV_PROXIES };
 let loaded = false;
+// True when the last loadPricingConfig() decrypted stored proxies successfully
+// (or none were stored) — false means the env fallback is live in memory.
+let lastLoadDecryptOk = true;
 const listeners: Array<() => void> = [];
 
 function notify(): void {
@@ -45,6 +48,7 @@ function notify(): void {
 
 /** Load persisted config from the DB (call once after initDb). Falls back to env. */
 export function loadPricingConfig(): void {
+  lastLoadDecryptOk = true;
   try {
     const raw = getSetting(SETTINGS_KEY);
     if (raw) {
@@ -58,6 +62,7 @@ export function loadPricingConfig(): void {
           const decoded = JSON.parse(decrypt(parsed.proxiesEnc, CRYPTO_SECRET));
           if (Array.isArray(decoded)) proxies = decoded.filter(Boolean);
         } catch {
+          lastLoadDecryptOk = false;
           logger.warn('[Pricing] Could not decrypt stored proxies (SESSION_SECRET changed?); falling back to .env.');
         }
       } else if (Array.isArray(parsed.proxies)) {
@@ -71,6 +76,19 @@ export function loadPricingConfig(): void {
   }
   loaded = true;
   logger.info(`[Pricing] Config: mode=${config.mode} (resolved ${getResolvedMode()}), proxies=${config.proxies.length}`);
+}
+
+/**
+ * Re-read the persisted config (used after a backup restore) and notify
+ * listeners (proxy pool rebuild). Returns false when stored proxies could not
+ * be decrypted (SESSION_SECRET changed) — in that case the caller must NOT
+ * re-persist the in-memory config, or the env fallback would silently
+ * overwrite the restored row.
+ */
+export function reloadPricingConfig(): boolean {
+  loadPricingConfig();
+  notify();
+  return lastLoadDecryptOk;
 }
 
 export function getPricingConfig(): PricingConfig {

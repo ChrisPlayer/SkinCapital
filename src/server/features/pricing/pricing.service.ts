@@ -178,7 +178,8 @@ function computeSteamCooldownMs(retryAfterMs: number | null): number {
   return Math.max(STEAM_RATE_LIMIT_COOLDOWN_MS, retryAfterMs ?? 0);
 }
 
-function parseSteamPrice(priceStr: string): number {
+// Exported for tests: a regression here silently corrupts every stored price.
+export function parseSteamPrice(priceStr: string): number {
   let cleaned = priceStr
     .replace(/[€$£]/g, '')
     .replace(/\s/g, '')
@@ -204,7 +205,8 @@ function parseSteamPrice(priceStr: string): number {
   return parseFloat(cleaned) || 0;
 }
 
-function parseSteamRenderPrice(payload: unknown): number | null {
+// Exported for tests (same reason as parseSteamPrice).
+export function parseSteamRenderPrice(payload: unknown): number | null {
   if (!payload || typeof payload !== 'object') return null;
 
   const data = payload as {

@@ -5,6 +5,7 @@ import { formatEur } from '../../lib/formatters.ts';
 import { useI18n } from '../../lib/i18n.tsx';
 import { getDisplayItemName } from '../../lib/item-display.ts';
 import { detectPatterns } from '../../../shared/lib/patterns.ts';
+import { activationKeyDown } from '../dashboard/dashboard-lib.ts';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
 
 interface ItemCardProps {
@@ -27,7 +28,10 @@ export function ItemCard({ item, onClick, showCasketBadge }: ItemCardProps) {
   return (
     <div
       className="group glass-card relative overflow-hidden rounded-2xl p-3.5 sm:p-4 cursor-pointer border border-white/[0.08] transition-all duration-200 hover:-translate-y-0.5 hover:border-white/[0.16] [content-visibility:auto] [contain-intrinsic-size:auto_280px]"
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
+      onKeyDown={onClick ? activationKeyDown(onClick) : undefined}
       style={{ '--rarity': item.rarity.color } as CSSProperties}
     >
       {/* Rarity accent line (own element so it never overrides the card shadows) */}

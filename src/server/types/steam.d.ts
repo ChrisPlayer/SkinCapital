@@ -120,26 +120,5 @@ declare module 'steam-totp' {
   export function generateAuthCode(sharedSecret: string): string;
 }
 
-declare module 'node-cron' {
-  interface ScheduleOptions {
-    scheduled?: boolean;
-    timezone?: string;
-    // Registry key in getTasks() (defaults to a uuid when omitted).
-    name?: string;
-  }
-  // node-cron 3.x has NO destroy(): a stopped task must be deleted from the
-  // getTasks() registry (keyed by options.name) or it leaks there forever.
-  interface ScheduledTask {
-    start(): void;
-    stop(): void;
-  }
-  function schedule(
-    expression: string,
-    func: () => void | Promise<void>,
-    options?: ScheduleOptions,
-  ): ScheduledTask;
-  function validate(expression: string): boolean;
-  function getTasks(): Map<string, ScheduledTask>;
-  export { schedule, validate, getTasks };
-  export default { schedule, validate, getTasks };
-}
+// node-cron >=4 ships its own type definitions (incl. destroy()) — the local
+// 3.x shim that used to live here is gone on purpose.

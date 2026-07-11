@@ -97,7 +97,7 @@ export function LoginPage() {
             </div>
             <div>
               <h1 className="font-display text-3xl font-bold">SkinCapital</h1>
-              <span className="font-mono text-xs text-sf-dim">{t('auth.steamAuth')}</span>
+              <span className="font-mono text-xs text-gray-500">{t('auth.steamAuth')}</span>
             </div>
           </div>
           {teaserProfile && (
@@ -141,16 +141,26 @@ export function LoginPage() {
             <Shield className="w-9 h-9 text-sf-cyan" />
           </div>
           <h1 className="font-display text-3xl font-bold mb-2">SkinCapital</h1>
-          <span className="font-mono text-xs text-sf-dim">{t('auth.steamAuth')}</span>
+          <span className="font-mono text-xs text-gray-500">{t('auth.steamAuth')}</span>
         </div>
 
         {needsSteamGuard ? (
-          <SteamGuardForm
-            onSubmit={handleSteamGuard}
-            isLoading={steamGuard.isPending}
-            error={error}
-            canConfirmMobile={canConfirmMobile}
-          />
+          <>
+            <SteamGuardForm
+              onSubmit={handleSteamGuard}
+              isLoading={steamGuard.isPending}
+              error={error}
+              canConfirmMobile={canConfirmMobile}
+            />
+            {/* Escape hatch: without it a wrong username locks the user on the
+                guard step until a full page reload. */}
+            <button
+              onClick={() => { setNeedsSteamGuard(false); setCanConfirmMobile(false); setError(''); }}
+              className="w-full mb-2 py-1.5 text-xs text-gray-500 hover:text-white transition-colors text-center"
+            >
+              {'← '}{t('auth.backToCredentials')}
+            </button>
+          </>
         ) : (
           <div className="sf-card p-6 mb-4">
             {error && (
@@ -168,6 +178,7 @@ export function LoginPage() {
                   value={form.username}
                   onChange={(e) => setForm({ ...form, username: e.target.value })}
                   required
+                  autoFocus
                   autoComplete="username"
                   placeholder={t('auth.usernamePlaceholder')}
                   className="w-full h-10 px-4 rounded-xl bg-sf-body border border-white/[0.08] text-sm text-white placeholder:text-sf-dim focus:outline-none focus:border-sf-cyan/40 transition-colors"

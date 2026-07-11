@@ -12,12 +12,14 @@ import {
   useBackupSettings,
   useSetBackupSettings,
   useRunBackup,
+  useBackupList,
+  useRestoreBackup,
 } from '../../hooks/useApi.ts';
 import { api } from '../../lib/api-client.ts';
 import { formatDate } from '../../lib/formatters.ts';
 import { useToast } from '../../components/toast.tsx';
 import { PillButton } from '../../components/controls.tsx';
-import { ChevronLeft, Check, Loader2, Play, RotateCcw, Download, Save } from 'lucide-react';
+import { ChevronLeft, Check, Loader2, Play, RotateCcw, Download, Save, History } from 'lucide-react';
 
 type PricingMode = 'auto' | 'proxy' | 'direct';
 
@@ -75,6 +77,25 @@ export function SettingsPage() {
     );
   };
 
+  // The toggle saves immediately (like the backup toggle) so it never silently
+  // diverges from the server; the Save button remains for time changes.
+  const handleToggleSchedule = () => {
+    if (!schedule) return;
+    const next = !schedEnabled;
+    setSchedEnabled(next);
+    const [h, m] = schedTime.split(':').map((v) => parseInt(v, 10));
+    if (!Number.isInteger(h) || !Number.isInteger(m)) return;
+    saveSchedule.mutate(
+      { enabled: next, hour: h, minute: m },
+      {
+        onError: (err) => {
+          setSchedEnabled(!next);
+          toast.error((err as Error).message);
+        },
+      },
+    );
+  };
+
   const handleRunNow = () => {
     runNow.mutate(undefined, {
       onSuccess: (result) => {
@@ -89,6 +110,9 @@ export function SettingsPage() {
   const { data: backup } = useBackupSettings();
   const saveBackup = useSetBackupSettings();
   const runBackup = useRunBackup();
+  const [showBackupList, setShowBackupList] = useState(false);
+  const { data: backupList } = useBackupList(showBackupList);
+  const restoreBackup = useRestoreBackup();
 
   const handleToggleBackup = () => {
     if (!backup) return;
@@ -105,6 +129,16 @@ export function SettingsPage() {
         else toast.error(t('toast.backupRunning'));
       },
       onError: (err) => toast.error((err as Error).message || t('toast.backupFailed')),
+    });
+  };
+
+  const handleRestoreBackup = (file: string) => {
+    // Destructive (replaces every table) but reversible: the server snapshots
+    // the current state right before applying the chosen file.
+    if (!window.confirm(t('settings.backupRestoreConfirm'))) return;
+    restoreBackup.mutate(file, {
+      onSuccess: () => toast.success(t('toast.restoreDone')),
+      onError: (err) => toast.error((err as Error).message || t('toast.restoreFailed')),
     });
   };
 
@@ -229,7 +263,9 @@ export function SettingsPage() {
           <h2 className="text-sm font-semibold text-white mb-1">{t('settings.autoPrices')}</h2>
           <p className="text-xs text-gray-500 mb-4">{t('settings.autoPricesDesc')}</p>
           <div className="flex flex-wrap items-center gap-3">
-            <PillButton active={schedEnabled} onClick={() => setSchedEnabled(!schedEnabled)}>
+            {/* Both toggle and Save stay disabled until the real config loads,
+                so the local defaults (12:00, enabled) can never overwrite it. */}
+            <PillButton active={schedEnabled} onClick={handleToggleSchedule} disabled={!schedule || saveSchedule.isPending}>
               {schedEnabled ? t('settings.autoPricesOn') : t('settings.autoPricesOff')}
             </PillButton>
             <input
@@ -242,7 +278,7 @@ export function SettingsPage() {
             />
             <button
               onClick={handleSaveSchedule}
-              disabled={saveSchedule.isPending}
+              disabled={!schedule || saveSchedule.isPending}
               className="inline-flex items-center gap-2 px-5 py-2 rounded-xl btn-accent font-semibold text-sm disabled:opacity-60"
             >
               {saveSchedule.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
@@ -265,7 +301,7 @@ export function SettingsPage() {
           <p className="text-xs text-gray-500 mb-4">{t('settings.backupDesc')}</p>
           <div className="flex flex-wrap items-center gap-3">
             <PillButton active={backup?.enabled ?? false} onClick={handleToggleBackup} disabled={!backup || saveBackup.isPending}>
-              {backup?.enabled ? t('settings.autoPricesOn') : t('settings.autoPricesOff')}
+              {backup?.enabled ? t('settings.backupOn') : t('settings.backupOff')}
             </PillButton>
             <button
               onClick={handleRunBackup}
@@ -286,12 +322,51 @@ export function SettingsPage() {
               <Download className="w-3.5 h-3.5" />
               {t('settings.backupDownload')}
             </a>
+            <button
+              onClick={() => setShowBackupList((v) => !v)}
+              disabled={!backup?.lastBackup}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
+            >
+              <History className="w-3.5 h-3.5" />
+              {showBackupList ? t('settings.backupHide') : t('settings.backupList')}
+            </button>
           </div>
           <p className="text-[11px] text-gray-500 mt-3">
             {backup?.lastBackup
               ? `${t('settings.backupLast')}: ${formatDate(backup.lastBackup.when, locale)} · ${backup.count} ${t('settings.backupCount')}`
               : t('settings.backupNone')}
           </p>
+          {showBackupList && backupList && backupList.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-1.5">
+              {backupList.map((b) => (
+                <div key={b.file} className="flex items-center gap-3 text-xs">
+                  <span className="font-mono text-gray-300">{formatDate(b.when, locale)}</span>
+                  <span className="font-mono text-gray-500">{(b.sizeBytes / 1024).toFixed(0)} KB</span>
+                  <span className="ml-auto flex items-center gap-1.5">
+                    <a
+                      href={api.settings.backupDownloadUrl(b.file)}
+                      download
+                      aria-label={`${t('settings.backupDownload')} — ${b.file}`}
+                      title={b.file}
+                      className="w-7 h-7 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-400 hover:text-white"
+                    >
+                      <Download className="w-3 h-3" />
+                    </a>
+                    <button
+                      onClick={() => handleRestoreBackup(b.file)}
+                      disabled={restoreBackup.isPending}
+                      className="h-7 px-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-[11px] text-gray-400 hover:text-sf-cyan hover:border-sf-cyan/40 disabled:opacity-50"
+                    >
+                      {/* variables = the file passed to mutate: spinner only on the in-flight row */}
+                      {restoreBackup.isPending && restoreBackup.variables === b.file
+                        ? <Loader2 className="w-3 h-3 animate-spin" />
+                        : t('settings.backupRestore')}
+                    </button>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Price fetch method */}
@@ -322,7 +397,7 @@ export function SettingsPage() {
                 ))}
               </div>
             ) : (
-              <span className="text-[11px] text-gray-600">{t('settings.proxiesNone')}</span>
+              <span className="text-[11px] text-gray-500">{t('settings.proxiesNone')}</span>
             )}
           </div>
 

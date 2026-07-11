@@ -271,10 +271,10 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
               </span>
             )}
             {item.floatValue != null && (
-              <span className="font-mono text-gray-400">float {item.floatValue.toFixed(4)}</span>
+              <span className="font-mono text-gray-400">{t('item.float')} {item.floatValue.toFixed(4)}</span>
             )}
             {item.stickerValue > 0 && (
-              <span className="text-gray-400">stickers {formatEur(item.stickerValue, priceProvider)}</span>
+              <span className="text-gray-400">{t('item.stickers')} {formatEur(item.stickerValue, priceProvider)}</span>
             )}
           </div>
           {item.stickers && item.stickers.length > 0 && (
@@ -314,6 +314,11 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
                   step="0.01"
                   value={buyPriceInput}
                   onChange={(e) => setBuyPriceInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !setPurchaseMutation.isPending && parsePriceInput(buyPriceInput) !== null) {
+                      handleSaveBuyPrice();
+                    }
+                  }}
                   placeholder="0.00"
                   aria-label={t('item.buyPrice')}
                   className="w-24 h-8 px-2 rounded-lg bg-white/5 border border-white/[0.08] text-xs text-white font-mono text-right focus:outline-none focus:border-sf-cyan/40"
@@ -347,10 +352,13 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
             )}
           </div>
 
-          {/* Custom price alert */}
+          {/* Custom price alert — server-side trigger checks run on fresh STEAM
+              prices only, so say so even when the modal displays another source. */}
           <div className="mb-5 p-3 rounded-xl bg-sf-body border border-white/[0.06] text-left">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <span className="text-xs text-gray-400 whitespace-nowrap">{t('alerts.priceAlert')}</span>
+              <span className="text-xs text-gray-400 whitespace-nowrap" title={t('alerts.steamBasis')}>
+                {t('alerts.priceAlert')}
+              </span>
               <div className="flex items-center gap-1.5">
                 <select
                   value={alertDirection}
@@ -367,6 +375,11 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
                   step="0.01"
                   value={alertThresholdInput}
                   onChange={(e) => setAlertThresholdInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !createAlertMutation.isPending && parsePriceInput(alertThresholdInput) !== null) {
+                      handleCreateAlert();
+                    }
+                  }}
                   placeholder="0.00"
                   aria-label={t('alerts.priceAlert')}
                   className="w-24 h-8 px-2 rounded-lg bg-white/5 border border-white/[0.08] text-xs text-white font-mono text-right focus:outline-none focus:border-sf-cyan/40"
@@ -380,6 +393,7 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
                 </button>
               </div>
             </div>
+            <p className="text-[10px] text-gray-500 mt-1.5">{t('alerts.steamBasis')}</p>
             {itemAlerts.length > 0 && (
               <div className="mt-2 pt-2 border-t border-white/[0.05] space-y-1.5">
                 {itemAlerts.map((alert) => (
@@ -397,7 +411,7 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
                       onClick={() => handleDeleteAlert(alert.id)}
                       disabled={deleteAlertMutation.isPending}
                       aria-label={t('item.clear')}
-                      className="ml-auto w-6 h-6 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] flex items-center justify-center transition-colors disabled:opacity-50"
+                      className="ml-auto w-8 h-8 p-1 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] flex items-center justify-center transition-colors disabled:opacity-50"
                     >
                       <X className="w-3 h-3 text-gray-500" />
                     </button>

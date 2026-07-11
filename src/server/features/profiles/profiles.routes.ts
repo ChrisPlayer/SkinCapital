@@ -1,5 +1,17 @@
 import { Router } from 'express';
-import { getAllProfiles, getProfileBySteamId, getOverview } from '../../db/queries/profiles.ts';
+import {
+  getAllProfiles,
+  getProfileBySteamId,
+  getOverview,
+  deleteProfileCascade,
+} from '../../db/queries/profiles.ts';
+import {
+  isRefreshInProgress,
+  isPriceRefreshInProgress,
+  clearProfileRuntimeState,
+} from '../inventory/inventory.service.ts';
+import { isDailyRefreshRunning } from '../inventory/inventory.jobs.ts';
+import { logger } from '../../lib/logger.ts';
 import type { Profile } from '../../../shared/types/api.ts';
 
 const router = Router();
@@ -12,6 +24,16 @@ function buildImageUrl(iconUrl: string | null, schemaImage: string | null): stri
   if (iconUrl) return `${STEAM_CDN}${iconUrl}/200fx200f`;
   if (schemaImage) return schemaImage;
   return null;
+}
+
+// SQLite datetime('now') is UTC but Z-less ('YYYY-MM-DD HH:MM:SS'); handing it
+// raw to the browser makes new Date() parse it as LOCAL time (a 00:30 Paris
+// refresh would display yesterday). Normalize to real ISO-8601 UTC.
+function toIsoUtc(sqliteDatetime: string | null): string | null {
+  if (!sqliteDatetime) return null;
+  if (sqliteDatetime.includes('Z') || sqliteDatetime.includes('+')) return sqliteDatetime;
+  const ms = Date.parse(`${sqliteDatetime.replace(' ', 'T')}Z`);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : sqliteDatetime;
 }
 
 function toProfile(row: {
@@ -32,7 +54,7 @@ function toProfile(row: {
     avatarUrl: row.avatar_url,
     itemCount: row.item_count,
     totalValue: row.total_value,
-    lastRefresh: row.last_refresh,
+    lastRefresh: toIsoUtc(row.last_refresh),
   };
 }
 
@@ -74,6 +96,29 @@ router.get('/profiles/:steamId', (req, res) => {
     res.json(toProfile(row));
   } catch {
     res.status(500).json({ error: 'Failed to fetch profile' });
+  }
+});
+
+// Remove a tracked profile and everything that references it (items, purchases,
+// alerts, history) — e.g. a test/typo login that would otherwise pollute the
+// multi-account overview forever. Write route: same posture as settings writes
+// (CSRF Origin guard + rate limiter, no Steam login). Refused while a refresh
+// is running so a live task can't write rows back for a deleted profile.
+router.delete('/profiles/:steamId', (req, res) => {
+  try {
+    const steamId = req.params.steamId;
+    if (isRefreshInProgress() || isPriceRefreshInProgress(steamId) || isDailyRefreshRunning()) {
+      return res.status(409).json({ error: 'A refresh is in progress — retry once it finishes' });
+    }
+    const deleted = deleteProfileCascade(steamId);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+    clearProfileRuntimeState(steamId);
+    logger.info(`[Profiles] Deleted profile ${steamId} (cascade)`);
+    res.json({ ok: true });
+  } catch {
+    res.status(500).json({ error: 'Failed to delete profile' });
   }
 });
 

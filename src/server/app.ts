@@ -6,7 +6,6 @@ import { errorHandler } from './middleware/error-handler.ts';
 import authRoutes from './features/auth/auth.routes.ts';
 import inventoryRoutes from './features/inventory/inventory.routes.ts';
 import pricingRoutes from './features/pricing/pricing.routes.ts';
-import historyRoutes from './features/history/history.routes.ts';
 import exportRoutes from './features/export/export.routes.ts';
 import profilesRoutes from './features/profiles/profiles.routes.ts';
 import settingsRoutes from './features/settings/settings.routes.ts';
@@ -34,7 +33,6 @@ export function createApp() {
   app.use('/api', profilesRoutes);
   app.use('/api', inventoryRoutes);
   app.use('/api', pricingRoutes);
-  app.use('/api', historyRoutes);
   app.use('/api', exportRoutes);
   app.use('/api', settingsRoutes);
   app.use('/api', purchasesRoutes);

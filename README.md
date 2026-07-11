@@ -1,8 +1,8 @@
-# CS2 Inventory Tracker v2
+# SkinCapital — CS2 Inventory Tracker
 
 Tracker d'inventaire CS2 avec support Storage Units, prix multi-sources (Steam Market / CSFloat / Skinport) et historique de valeur.
 
-**Stack** : Express + TypeScript / React + Vite / SQLite (better-sqlite3 + Drizzle) / shadcn/ui + Tailwind
+**Stack** : Express + TypeScript / React + Vite / SQLite (better-sqlite3, SQL brut) / Tailwind
 
 ## 💾 Installation simple (Windows — aucune connaissance requise)
 
@@ -79,8 +79,20 @@ Toutes les variables de tuning fin (workers, timeouts, cooldowns, verification d
 | `npm test` | Tests unitaires (Vitest) |
 | `npm run typecheck` | Verification TypeScript |
 | `npm run lint` | ESLint |
-| `npm run db:generate` | Generer migrations Drizzle |
-| `npm run db:migrate` | Appliquer migrations Drizzle |
+| `npm run package:win` | Pack portable Windows (sortie dans `release/`) |
+
+## Deploiement Proxmox (mainteneur)
+
+L'app tourne 24/7 dans un LXC Debian (systemd `cs2.service`, app dans `/opt/cs2`, port 3000).
+La box n'a **aucun outillage de dev** : le client se build **localement** et le `dist/` pre-construit est pousse tel quel.
+
+```bash
+scripts/deploy-proxmox.sh          # lint+typecheck+tests, build, upload, restart, health check
+scripts/deploy-proxmox.sh --skip-checks
+```
+
+Le script deploie `HEAD` (via `git archive`) : commitez avant de deployer. `.env` et `data/`
+du conteneur sont preserves (jamais dans l'archive). Hote/CT surchargables par env : `PVE_HOST`, `CTID`.
 
 ## Fonctionnalites
 
@@ -91,12 +103,16 @@ Toutes les variables de tuning fin (workers, timeouts, cooldowns, verification d
 - **Une source a la fois** dans la vue principale (au choix : Steam, Steam net de frais, CSFloat, Skinport) ; le modal de detail d'un item affiche les prix des trois sources cote a cote
 - **Page Parametres** : choix de la source de prix, mode pricing (auto/proxy/direct), gestion des proxies et langue — directement depuis l'UI, sans toucher au `.env`
 - **Storage Units** : lecture des caskets CS2 via Game Coordinator, inclus dans l'inventaire et le dashboard
-- **Multi-profils** : suivi de plusieurs comptes Steam, selection depuis la page d'accueil
-- **Historique** : graphique d'evolution de valeur (7/30/90 jours)
-- **Recherche & tri** : temps reel, par prix/nom/float
+- **Multi-profils** : suivi de plusieurs comptes Steam, selection depuis la page d'accueil, suppression possible ; vue combinee (valeur totale + top items) sur la page d'accueil
+- **Historique** : graphique d'evolution de valeur (7/30/90 jours), par source de prix
+- **Patterns rares** : detection blue gem (Case Hardened) et floats extremes, badge + filtre dedie
+- **Tendances** : top variations du portefeuille + tendances marche (items deja suivis)
+- **Alertes de prix** : seuils personnalises par item (verifies sur le prix Steam)
+- **Recherche & tri** : temps reel, par prix/nom/float/quantite + filtres rarete/type/qualite
 - **Export CSV** : telechargement de l'inventaire complet
+- **Sauvegarde auto** : dump JSON quotidien (03:00, 14 conserves), telechargement et **restauration** depuis la page Parametres
 - **i18n** : interface FR / EN
-- **Auto-refresh** : cron configurable
+- **Reload quotidien des prix** : heure configurable depuis l'UI (aucune connexion Steam requise)
 
 ## Structure
 
@@ -104,12 +120,13 @@ Toutes les variables de tuning fin (workers, timeouts, cooldowns, verification d
 src/
   shared/          Types & constantes partages (client + server)
   server/
-    db/            Schema Drizzle + queries SQLite
+    db/            Schema SQL + queries SQLite (better-sqlite3)
     features/
       auth/        Login Steam, middleware auth
       steam/       Client Steam + inventaire + schema items
       inventory/   Refresh, dashboard data, cron jobs
       pricing/     Sources de prix (Steam proxy/direct, CSFloat, Skinport), queues + cache
+      backup/      Sauvegarde/restauration JSON (quotidienne + manuelle)
       history/     Snapshots journaliers
       export/      Export CSV
       profiles/    Profils suivis

@@ -21,9 +21,20 @@ const SCHEDULE_KEY = 'price_refresh_schedule';
 const DEFAULT_SCHEDULE: PriceRefreshSchedule = { enabled: true, hour: 12, minute: 0 };
 // Fixed registry name: node-cron keys its global task map by options.name.
 const DAILY_TASK_NAME = 'daily-price-reload';
+// node-cron >=4 exposes destroy(), which stops the task AND removes it from the
+// global registry — re-saving the schedule N times leaves exactly one task.
 
 let dailyTask: ScheduledTask | null = null;
 let dailyRunInProgress = false;
+
+/**
+ * True while the daily multi-profile price reload is anywhere in its run —
+ * including BETWEEN two profiles, where isPriceRefreshInProgress() is briefly
+ * false. Destructive operations (profile delete, backup restore) check this.
+ */
+export function isDailyRefreshRunning(): boolean {
+  return dailyRunInProgress;
+}
 
 export function getPriceRefreshSchedule(): PriceRefreshSchedule {
   try {
@@ -89,11 +100,7 @@ export function runDailyPriceRefresh(): boolean {
 
 export function applyPriceRefreshSchedule() {
   if (dailyTask) {
-    dailyTask.stop();
-    // node-cron 3.x has no destroy(): stopped tasks linger in the global
-    // registry forever. Drop ours by its fixed name so re-saving the schedule
-    // N times leaves exactly one task registered.
-    cron.getTasks().delete(DAILY_TASK_NAME);
+    dailyTask.destroy();
     dailyTask = null;
   }
   const schedule = getPriceRefreshSchedule();
@@ -133,21 +140,24 @@ export function setBackupEnabled(enabled: boolean): boolean {
   return isBackupEnabled();
 }
 
+export type DailyBackupResult = 'ok' | 'skipped' | 'failed';
+
 /**
- * Run a backup now. Returns false when one was already in progress and this
- * trigger was skipped (no overlap). Synchronous and quick; errors propagate.
+ * Run a backup now. 'skipped' when one was already in progress (no overlap),
+ * 'failed' when the write threw (disk full…) — distinct so the UI can tell
+ * "already running" from an actual failure. Synchronous and quick.
  */
-export function runDailyBackup(): boolean {
+export function runDailyBackup(): DailyBackupResult {
   if (isBackupRunning()) {
     logger.warn('[Cron] Backup already running, skipping this trigger');
-    return false;
+    return 'skipped';
   }
   try {
     runBackup();
-    return true;
+    return 'ok';
   } catch (err) {
     logger.error('[Cron] Daily backup failed:', (err as Error).message);
-    return false;
+    return 'failed';
   }
 }
 
@@ -155,8 +165,7 @@ let backupTask: ScheduledTask | null = null;
 
 function applyBackupSchedule() {
   if (backupTask) {
-    backupTask.stop();
-    cron.getTasks().delete(BACKUP_TASK_NAME);
+    backupTask.destroy();
     backupTask = null;
   }
   backupTask = cron.schedule(

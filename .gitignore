@@ -10,8 +10,5 @@ data/backups/
 
 dist/
 
-# Workflow non poussable via ce token OAuth (manque le scope 'workflow')
-.github/workflows/ci.yml
-
 # Packs portables generes
 release/

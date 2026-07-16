@@ -2,6 +2,11 @@
 
 CS2 inventory tracker with Storage Units support, multi-source pricing (Steam Market / CSFloat / Skinport) and value history.
 
+> **Disclaimer** — SkinCapital is not affiliated with, endorsed by, or connected to Valve Corporation or Steam.
+> It signs in with the same device-authorization flow as the official clients, never stores your credentials,
+> and only ever **reads** your inventory — it cannot trade, sell or modify anything. Market prices are fetched
+> anonymously (never with your session). Use at your own risk; an alt account is recommended for peace of mind.
+
 **Stack**: Express + TypeScript / React + Vite / SQLite (better-sqlite3) / shadcn/ui + Tailwind
 
 ## Installation

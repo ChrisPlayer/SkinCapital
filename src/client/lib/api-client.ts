@@ -9,6 +9,8 @@ import type {
   Overview,
   ApiError,
   BackupFileInfo,
+  EventsResponse,
+  InventoryMovement,
 } from '../../shared/types/api.ts';
 
 const BASE = '/api';
@@ -78,6 +80,15 @@ export const api = {
       request<InventoryStatus>(
         `/inventory/status?source=${source}${steamId ? `&steamId=${encodeURIComponent(steamId)}` : ''}`,
       ),
+    movements: (steamId: string, limit = 50) =>
+      request<InventoryMovement[]>(
+        `/inventory/events?steamId=${encodeURIComponent(steamId)}&limit=${limit}`,
+      ),
+  },
+
+  events: {
+    since: (seq: number | null) =>
+      request<EventsResponse>(`/events${seq !== null ? `?since=${seq}` : ''}`),
   },
 
   prices: {
@@ -99,6 +110,13 @@ export const api = {
       ),
     cancel: (steamId: string) =>
       request<{ cancelled: boolean }>(`/prices/cancel?steamId=${encodeURIComponent(steamId)}`, { method: 'POST' }),
+    compare: (steamId: string) =>
+      request<Array<{
+        marketHashName: string;
+        quantity: number;
+        imageUrl: string | null;
+        prices: { steam: number | null; csfloat: number | null; skinport: number | null };
+      }>>(`/prices/compare?steamId=${encodeURIComponent(steamId)}`),
   },
 
   purchases: {
@@ -176,5 +194,12 @@ export const api = {
         '/settings/backup/restore',
         { method: 'POST', body: JSON.stringify({ file }) },
       ),
+    getSources: () =>
+      request<{ sources: Array<'steam' | 'csfloat' | 'skinport'> }>('/settings/sources'),
+    setSources: (sources: Array<'steam' | 'csfloat' | 'skinport'>) =>
+      request<{ ok: boolean; sources: Array<'steam' | 'csfloat' | 'skinport'> }>('/settings/sources', {
+        method: 'POST',
+        body: JSON.stringify({ sources }),
+      }),
   },
 };

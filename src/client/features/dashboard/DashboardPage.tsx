@@ -7,39 +7,44 @@ import {
   useRefreshInventory,
   useRefreshPrices,
   useCancelPriceRefresh,
+  useTrackedSources,
 } from '../../hooks/useApi.ts';
 import { useRefreshPolling } from '../../hooks/usePolling.ts';
 import { useI18n } from '../../lib/i18n.tsx';
-import { formatEur, formatPercent } from '../../lib/formatters.ts';
+import { formatEur } from '../../lib/formatters.ts';
 import { getDisplayItemName } from '../../lib/item-display.ts';
 import { detectPatterns } from '../../../shared/lib/patterns.ts';
 import { itemCategory, CATEGORY_ORDER, type ItemCategoryId } from '../../../shared/lib/item-names.ts';
 import { ItemDetailModal } from '../inventory/ItemDetailModal.tsx';
 import { ItemCard } from '../inventory/ItemCard.tsx';
-import { api } from '../../lib/api-client.ts';
 import { useToast } from '../../components/toast.tsx';
-import { PillButton, GhostIconButton } from '../../components/controls.tsx';
+import { GhostIconButton } from '../../components/controls.tsx';
+import { AccountStatus } from '../../components/AccountStatus.tsx';
+import { ConfirmDialog } from '../../components/ConfirmDialog.tsx';
 import { useCountUp } from '../../hooks/useCountUp.ts';
 import {
-  LayoutDashboard, Package, FolderOpen, LogOut, Users,
-  RefreshCw, Loader2, LogIn, Download, Search,
-  ChevronLeft, ChevronRight, ChevronDown, DollarSign, Settings,
-  LayoutGrid, List, X, AlignJustify, ArrowUp, ArrowDown,
+  LayoutDashboard, Package, FolderOpen, Search, Activity, Scale,
+  ChevronLeft, ChevronRight, LayoutGrid, List, X, AlignJustify,
+  ArrowUp, ArrowDown,
 } from 'lucide-react';
 import type { ItemGroup } from '../../../shared/types/inventory.ts';
-import type { RefreshOutcome } from '../../../shared/types/api.ts';
+import { isAllProfiles } from '../../../shared/constants/profiles.ts';
 import {
-  REDUCED_MOTION, SECTION_TITLE, CATEGORY_LABEL_KEYS, COUNT_FORMATTERS, sourceLabel,
+  REDUCED_MOTION, SECTION_TITLE, CATEGORY_LABEL_KEYS, COUNT_FORMATTERS,
 } from './dashboard-lib.ts';
+import type { View } from './shared.ts';
+import { Sidebar, type NavItem } from './Sidebar.tsx';
+import { MobileNav } from './MobileNav.tsx';
+import { DashboardHeader } from './DashboardHeader.tsx';
+import { ActivityView } from './ActivityView.tsx';
+import { CompareView } from './CompareView.tsx';
+import { AccountBreakdown } from './AccountBreakdown.tsx';
 import { DashboardSkeleton } from './DashboardSkeleton.tsx';
 import { HeroChart } from './HeroChart.tsx';
 import { PortfolioComposition } from './PortfolioComposition.tsx';
 import { TopMovers, MarketTrends } from './MoversCard.tsx';
 import { AssetRow } from './AssetRow.tsx';
 import { StorageSection } from './StorageSection.tsx';
-import { ActivityFeed } from './ActivityFeed.tsx';
-
-type View = 'dashboard' | 'inventory' | 'storage';
 
 type QualityFilter = '' | 'stattrak' | 'souvenir' | 'normal';
 
@@ -82,7 +87,7 @@ export function DashboardPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState<View>(() => {
     const v = searchParams.get('view');
-    return v === 'inventory' || v === 'storage' ? v : 'dashboard';
+    return v === 'inventory' || v === 'storage' || v === 'activity' || v === 'compare' ? v : 'dashboard';
   });
   const [days, setDays] = useState(30);
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
@@ -111,10 +116,7 @@ export function DashboardPage() {
   );
   const [compact, setCompact] = useState(() => localStorage.getItem('inventoryDensity') === 'compact');
   const [includeStorage, setIncludeStorage] = useState(() => searchParams.get('storage') === '1');
-  const [showFeed, setShowFeed] = useState(true);
-  // <xl screens have no feed aside: the same feed renders as a collapsible
-  // block below the content, collapsed by default to keep the page short.
-  const [showMobileFeed, setShowMobileFeed] = useState(false);
+  const [logoutDialogOpen, setLogoutDialogOpen] = useState(false);
   const [storageSort, setStorageSort] = useState<'value' | 'name' | 'count'>('value');
   const toast = useToast();
   const mainRef = useRef<HTMLElement>(null);
@@ -168,31 +170,24 @@ export function DashboardPage() {
     setViewMode(mode);
     localStorage.setItem('inventoryViewMode', mode);
   };
-  // Surface a full-inventory refresh that ended WITHOUT applying (anti-wipe
-  // abort or error): the spinner stopping alone looks like a silent no-op.
-  const onInventoryRefreshDone = useCallback(
-    (outcome: RefreshOutcome | null) => {
-      if (!outcome || outcome.success) return;
-      if (outcome.error === 'fetch_incomplete') {
-        toast.error(t('sync.failedIncomplete').replace('{kept}', String(outcome.kept ?? 0)));
-      } else {
-        toast.error(t('sync.failed').replace('{error}', outcome.error ?? ''));
-      }
-    },
-    [toast, t],
-  );
-  const { isRefreshing, syncType, source: activeRefreshSource, lastRefresh, progress } = useRefreshPolling(
+  // Refresh-outcome toasts (anti-wipe aborts, errors) come from useEventToasts,
+  // mounted once at App level — no per-page onComplete wiring needed here.
+  const { isRefreshing, syncType, source: activeRefreshSource, lastRefresh, progress, steam } = useRefreshPolling(
     steamId,
     priceSource,
-    undefined,
-    onInventoryRefreshDone,
   );
   const { data, isError, refetch } = useDashboardData(steamId!, days, priceSource, isRefreshing);
   const refreshMutation = useRefreshInventory();
   const refreshPricesMutation = useRefreshPrices();
   const cancelPriceRefreshMutation = useCancelPriceRefresh();
 
-  const isOwner = status?.isLoggedIn && status?.steamId === steamId;
+  const isAggregate = isAllProfiles(steamId);
+  const isOwner = !!status?.isLoggedIn && status?.steamId === steamId;
+
+  // Comparator tab only exists once 2+ price sources are tracked (Settings).
+  const { data: trackedSourcesData } = useTrackedSources();
+  const trackedSources = trackedSourcesData?.sources ?? ['steam'];
+  const showCompare = trackedSources.length >= 2;
 
   // Tab title doubles as a live ticker: portfolio value, ⟳ prefix while a
   // refresh runs. Computed at render time so formatEur picks up locale changes.
@@ -267,8 +262,8 @@ export function DashboardPage() {
   // Animated ticker for the sidebar valuation (HeroChart runs its own instance).
   const animatedTotal = useCountUp(data?.totalValue ?? 0);
 
-  // Stable handler identities (useCallback + stable react-query mutate) so the
-  // memoized ActivityFeed doesn't re-render on unrelated dashboard state changes.
+  // Stable handler identities (useCallback + stable react-query mutate) so
+  // memoized children don't re-render on unrelated dashboard state changes.
   const { mutate: mutateRefreshPrices } = refreshPricesMutation;
   const { mutate: mutateCancelPriceRefresh } = cancelPriceRefreshMutation;
   const handleRefreshPrices = useCallback(() => {
@@ -314,10 +309,12 @@ export function DashboardPage() {
   const formatCount = (value: number) => COUNT_FORMATTERS[locale].format(value);
   const totalStorageUnits = data.storageUnits.length + data.emptyStorageUnits;
 
-  const navItems: { id: View; icon: typeof LayoutDashboard; label: string }[] = [
+  const navItems: NavItem[] = [
     { id: 'dashboard', icon: LayoutDashboard, label: t('nav.dashboard') },
     { id: 'inventory', icon: Package, label: `${t('nav.inventory')} (${formatCount(data.totalItems)})` },
     { id: 'storage', icon: FolderOpen, label: `${t('nav.storageUnits')} (${formatCount(totalStorageUnits)})` },
+    { id: 'activity', icon: Activity, label: t('nav.activity') },
+    ...(showCompare ? [{ id: 'compare' as const, icon: Scale, label: t('nav.compare') }] : []),
   ];
 
   const resetFilters = () => {
@@ -366,203 +363,93 @@ export function DashboardPage() {
       },
     });
   };
-  const handleLogout = async () => { await logout.mutateAsync(); };
+  const handleLogout = async () => {
+    try {
+      await logout.mutateAsync();
+      setLogoutDialogOpen(false);
+      toast.success(t('toast.loggedOut'));
+      navigate('/');
+    } catch (err) {
+      toast.error((err as Error).message || t('toast.refreshError'));
+    }
+  };
 
-  const feedCols = showFeed ? 'xl:grid-cols-[260px_1fr_380px]' : 'xl:grid-cols-[260px_1fr]';
   const isPriceRefreshForCurrentSource = syncType === 'prices' && activeRefreshSource === priceSource;
-  const syncProgressText = progress && progress.total > 0
-    ? ` (${progress.fetched}/${progress.total})`
-    : '';
-  const syncSourceText = syncType === 'prices' ? ` - ${sourceLabel(activeRefreshSource)}` : '';
+
+  const viewTitle =
+    view === 'dashboard' ? t('dashboard.marketOverview')
+      : view === 'inventory' ? t('dashboard.inventory')
+        : view === 'storage' ? t('dashboard.storageUnits')
+          : view === 'activity' ? t('nav.activity')
+            : t('compare.title');
+
+  const accountStatusNode = isAggregate
+    ? <span className="text-xs text-gray-500 self-end pb-1">{t('overview.allAccountsSubtitle')}</span>
+    : <AccountStatus steamId={steamId} steam={steam} progress={progress} />;
 
   return (
     <>
-      <div className={`h-screen h-dvh grid grid-cols-1 md:grid-cols-[260px_1fr] ${feedCols} overflow-hidden`}>
+      <div className="h-screen h-dvh grid grid-cols-1 md:grid-cols-[260px_1fr] overflow-hidden">
 
         {/* ═══ SIDEBAR ═══ */}
-        <aside className="sf-sidebar hidden md:flex flex-col py-8 px-6">
-          <div className="flex items-center gap-3 mb-12">
-            <div className="w-1 h-6 rounded-full bg-[color:var(--accent)] shadow-[0_0_10px_var(--accent)]" />
-            <span className="font-display text-xl font-bold">SkinCapital</span>
-          </div>
-
-          <span className="nav-label mb-3">{t('nav.terminal')}</span>
-          <nav className="space-y-1 mb-8">
-            {navItems.map((n) => (
-              <button key={n.id} className={`sf-nav-item ${view === n.id ? 'active' : ''}`} onClick={() => switchView(n.id)}>
-                <n.icon className="w-4 h-4" /> {n.label}
-              </button>
-            ))}
-          </nav>
-
-          <span className="nav-label mb-3">{t('nav.account')}</span>
-          <nav className="space-y-1">
-            <button className="sf-nav-item" onClick={() => navigate('/')}>
-              <Users className="w-4 h-4" /> {t('nav.profiles')}
-            </button>
-            <button className="sf-nav-item" onClick={() => navigate(steamId ? `/settings/${steamId}` : '/settings')}>
-              <Settings className="w-4 h-4" /> {t('nav.settings')}
-            </button>
-            {isOwner && (
-              <button className="sf-nav-item" onClick={handleLogout}>
-                <LogOut className="w-4 h-4" /> {t('nav.logout')}
-              </button>
-            )}
-          </nav>
-
-          <div className="mt-auto p-5 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-            <div className="text-xs text-gray-500 mb-1">{t('dashboard.netValuation')}</div>
-            <div className="font-mono text-2xl font-bold">{formatEur(animatedTotal, pp)}</div>
-            {data.change24h.hasData && (
-              <div className={`font-mono text-xs mt-1 ${data.change24h.percentage >= 0 ? 'text-sf-green' : 'text-sf-pink'}`}>
-                {formatPercent(data.change24h.percentage)} (24H)
-              </div>
-            )}
-          </div>
-        </aside>
+        <Sidebar
+          navItems={navItems}
+          view={view}
+          onSwitchView={switchView}
+          steamId={steamId}
+          showLogout={isOwner}
+          onLogoutClick={() => setLogoutDialogOpen(true)}
+          netValue={animatedTotal}
+          change24h={data.change24h}
+          pp={pp}
+        />
 
         {/* ═══ MAIN ═══ */}
         <main ref={mainRef} className="overflow-y-auto px-5 py-8 xl:px-10 relative">
           <div className="grid-overlay" />
 
-          {/* Mobile nav */}
-          <div className="md:hidden flex items-center gap-3 mb-4 relative z-10">
-            <button onClick={() => navigate('/')} aria-label={t('settings.back')} className="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center"><ChevronLeft className="w-4 h-4" /></button>
-            <div className="w-1 h-5 rounded-full bg-[color:var(--accent)] shadow-[0_0_10px_var(--accent)]" />
-            <span className="font-display font-bold text-lg">SkinCapital</span>
-            {/* Compact icon-only actions (the desktop header is hidden on mobile) */}
-            <div className="flex md:hidden items-center gap-2 ml-auto">
-              {isRefreshing && <Loader2 className="w-4 h-4 animate-spin text-sf-cyan" aria-hidden="true" />}
-              <button
-                onClick={handleRefreshPrices}
-                disabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource || isRefreshing}
-                aria-label={t('dashboard.refreshPrices')}
-                title={t('dashboard.refreshPricesTooltip')}
-                className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-300 disabled:opacity-50"
-              >
-                <DollarSign className="w-4 h-4" />
-              </button>
-              <button
-                onClick={handleRefreshInventory}
-                disabled={refreshMutation.isPending || isRefreshing}
-                aria-label={isOwner ? t('dashboard.refreshInventory') : t('auth.login')}
-                title={t('dashboard.refreshInventoryTooltip')}
-                className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-300 disabled:opacity-50"
-              >
-                {isOwner ? <RefreshCw className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-              </button>
-              {isOwner && (
-                <a
-                  href={api.export.csvUrl(steamId)}
-                  download
-                  aria-label={t('dashboard.exportCsv')}
-                  title={t('dashboard.exportCsv')}
-                  className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center"
-                >
-                  <Download className="w-4 h-4 text-gray-400" />
-                </a>
-              )}
-              <button
-                onClick={() => navigate(`/settings/${steamId}`)}
-                aria-label={t('nav.settings')}
-                title={t('nav.settings')}
-                className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-300"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-              {isOwner && (
-                <button
-                  onClick={handleLogout}
-                  aria-label={t('nav.logout')}
-                  title={t('nav.logout')}
-                  className="w-10 h-10 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-300"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="md:hidden flex gap-1.5 overflow-x-auto relative z-10 pb-1">
-            {navItems.map((n) => (
-              <button key={n.id} onClick={() => switchView(n.id)} className={`sf-tag whitespace-nowrap ${view === n.id ? 'btn-accent font-semibold' : ''}`}>
-                {n.label}
-              </button>
-            ))}
-          </div>
+          <MobileNav
+            navItems={navItems}
+            view={view}
+            onSwitchView={switchView}
+            steamId={steamId}
+            isOwner={isOwner}
+            showExport={isOwner}
+            showLogout={isOwner}
+            onLogoutClick={() => setLogoutDialogOpen(true)}
+            accountStatus={!isAggregate ? <AccountStatus steamId={steamId} steam={steam} progress={progress} compact /> : undefined}
+            onRefreshPrices={handleRefreshPrices}
+            refreshPricesDisabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource || isRefreshing}
+            onRefreshInventory={handleRefreshInventory}
+            refreshInventoryDisabled={refreshMutation.isPending || isRefreshing}
+            showRefreshInventory={!isAggregate}
+          />
           {/* The price window only lives in the desktop header otherwise. */}
-          <div className="md:hidden relative z-10 mb-6 mt-1.5">
-            {data.priceWindow && (
+          {data.priceWindow && (
+            <div className="md:hidden relative z-10 -mt-4 mb-6">
               <span className="text-[11px] text-gray-500" title={t('dashboard.priceWindowTooltip')}>
                 {formatPriceWindow(data.priceWindow, locale)}
               </span>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Header */}
-          <header className="hidden md:flex flex-wrap justify-between items-center mb-8 relative z-10 gap-4">
-            <div>
-              <h1 className="font-display tracking-tight text-2xl font-bold mb-0.5">
-                {view === 'dashboard' && t('dashboard.marketOverview')}
-                {view === 'inventory' && t('dashboard.inventory')}
-                {view === 'storage' && t('dashboard.storageUnits')}
-              </h1>
-              <span className="text-xs text-gray-500">{steamId}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              {isRefreshing ? (
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sf-cyan/10 border border-sf-cyan/20">
-                    <Loader2 className="w-4 h-4 animate-spin text-sf-cyan" />
-                    <span className="text-xs text-sf-cyan">{t('dashboard.syncing')}{syncSourceText}{syncProgressText}</span>
-                  </div>
-                  {syncType === 'prices' && (
-                    <PillButton
-                      onClick={handleCancelPriceRefresh}
-                      disabled={cancelPriceRefreshMutation.isPending}
-                    >
-                      <X className="w-3.5 h-3.5" />
-                      {t('common.cancel')}
-                    </PillButton>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <PillButton
-                    onClick={handleRefreshPrices}
-                    disabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
-                    title={t('dashboard.refreshPricesTooltip')}
-                  >
-                    <DollarSign className="w-4 h-4" />
-                    <span className="hidden lg:inline">{t('dashboard.refreshPrices')}</span>
-                  </PillButton>
-                  <PillButton
-                    onClick={handleRefreshInventory}
-                    disabled={refreshMutation.isPending}
-                    title={t('dashboard.refreshInventoryTooltip')}
-                  >
-                    {isOwner ? <RefreshCw className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-                    <span className="hidden lg:inline">{isOwner ? t('dashboard.refreshInventory') : t('auth.login')}</span>
-                  </PillButton>
-                </>
-              )}
-              {isOwner && (
-                <a
-                  href={api.export.csvUrl(steamId)}
-                  download
-                  aria-label={t('dashboard.exportCsv')}
-                  title={t('dashboard.exportCsv')}
-                  className="flex items-center justify-center w-9 h-9 rounded-xl bg-white/[0.02] border border-white/[0.08] hover:border-white/[0.16] transition-all"
-                >
-                  <Download className="w-4 h-4 text-gray-400" />
-                </a>
-              )}
-              {data.priceWindow && (
-                <span className="sf-tag text-gray-400" title={t('dashboard.priceWindowTooltip')}>
-                  {formatPriceWindow(data.priceWindow, locale)}
-                </span>
-              )}
-            </div>
-          </header>
+          <DashboardHeader
+            title={viewTitle}
+            accountStatus={accountStatusNode}
+            steamId={steamId}
+            isOwner={isOwner}
+            showExport={isOwner}
+            isRefreshing={isRefreshing}
+            syncType={syncType}
+            onCancelPriceRefresh={handleCancelPriceRefresh}
+            cancelPending={cancelPriceRefreshMutation.isPending}
+            onRefreshPrices={handleRefreshPrices}
+            refreshPricesDisabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
+            onRefreshInventory={handleRefreshInventory}
+            refreshInventoryDisabled={refreshMutation.isPending}
+            showRefreshInventory={!isAggregate}
+            priceWindowLabel={data.priceWindow ? formatPriceWindow(data.priceWindow, locale) : null}
+          />
 
           {/* ── CONTENT ── */}
           <div className="relative z-10">
@@ -577,6 +464,8 @@ export function DashboardPage() {
                   locale={locale}
                   t={t}
                 />
+
+                {isAggregate && <AccountBreakdown pp={pp} />}
 
                 <PortfolioComposition items={data.items} locale={locale} t={t} pp={pp} />
 
@@ -847,82 +736,53 @@ export function DashboardPage() {
                 )}
               </div>
             )}
-          </div>
 
-          {/* The xl feed aside is display:none below xl; surface the same feed
-              as a collapsible block so smaller screens aren't locked out. */}
-          <div className="xl:hidden relative z-10 mt-8">
-            <button
-              onClick={() => setShowMobileFeed(!showMobileFeed)}
-              aria-expanded={showMobileFeed}
-              className="w-full h-11 px-4 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between text-sm font-semibold text-gray-300 hover:text-white transition-colors"
-            >
-              {t('feed.activity')}
-              <ChevronDown className={`w-4 h-4 transition-transform ${showMobileFeed ? '' : '-rotate-90'}`} />
-            </button>
-            {showMobileFeed && (
-              <div className="mt-4">
-                <ActivityFeed
-                  data={data}
-                  steamId={steamId}
-                  pp={pp}
-                  locale={locale}
-                  isRefreshing={isRefreshing}
-                  syncType={syncType}
-                  source={activeRefreshSource}
-                  selectedPriceSource={priceSource}
-                  lastRefresh={lastRefresh}
-                  progress={progress}
-                  onRefreshPrices={handleRefreshPrices}
-                  onCancelPriceRefresh={handleCancelPriceRefresh}
-                  isRefreshPricesPending={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
-                  isCancelPriceRefreshPending={cancelPriceRefreshMutation.isPending}
-                />
-              </div>
+            {/* COMPARE */}
+            {view === 'compare' && (
+              <CompareView
+                steamId={steamId}
+                pp={pp}
+                trackedSources={trackedSources}
+                primarySource={priceSource}
+              />
+            )}
+
+            {/* ACTIVITY */}
+            {view === 'activity' && (
+              <ActivityView
+                data={data}
+                steamId={steamId}
+                pp={pp}
+                locale={locale}
+                isAggregate={isAggregate}
+                isRefreshing={isRefreshing}
+                syncType={syncType}
+                source={activeRefreshSource}
+                selectedPriceSource={priceSource}
+                lastRefresh={lastRefresh}
+                progress={progress}
+                onRefreshPrices={handleRefreshPrices}
+                onCancelPriceRefresh={handleCancelPriceRefresh}
+                isRefreshPricesPending={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
+                isCancelPriceRefreshPending={cancelPriceRefreshMutation.isPending}
+              />
             )}
           </div>
         </main>
-
-        {/* ═══ ACTIVITY FEED ═══ */}
-        {showFeed && (
-          <aside className="sf-feed hidden xl:block overflow-y-auto px-6 py-8">
-            <div className="flex items-center justify-between mb-6">
-              <span className="text-sm font-semibold text-gray-300">{t('feed.activity')}</span>
-              <button onClick={() => setShowFeed(false)} className="w-8 h-8 rounded-lg bg-white/[0.04] hover:bg-white/[0.08] flex items-center justify-center transition-colors">
-                <X className="w-4 h-4 text-gray-500" />
-              </button>
-            </div>
-            <ActivityFeed
-              data={data}
-              steamId={steamId}
-              pp={pp}
-              locale={locale}
-              isRefreshing={isRefreshing}
-              syncType={syncType}
-              source={activeRefreshSource}
-              selectedPriceSource={priceSource}
-              lastRefresh={lastRefresh}
-              progress={progress}
-              onRefreshPrices={handleRefreshPrices}
-              onCancelPriceRefresh={handleCancelPriceRefresh}
-              isRefreshPricesPending={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
-              isCancelPriceRefreshPending={cancelPriceRefreshMutation.isPending}
-            />
-          </aside>
-        )}
-        {!showFeed && (
-          <button
-            onClick={() => setShowFeed(true)}
-            className="hidden xl:flex fixed right-0 top-1/2 -translate-y-1/2 w-8 h-16 rounded-l-lg bg-white/[0.06] hover:bg-white/[0.10] items-center justify-center transition-colors z-50"
-            title={t('feed.showPanel')}
-            aria-label={t('feed.showPanel')}
-          >
-            <ChevronLeft className="w-4 h-4 text-gray-400" />
-          </button>
-        )}
       </div>
 
-      <ItemDetailModal item={liveSelectedItem} steamId={steamId} open={!!selectedItem} onOpenChange={(open) => { if (!open) setSelectedItem(null); }} />
+      <ConfirmDialog
+        open={logoutDialogOpen}
+        onOpenChange={setLogoutDialogOpen}
+        title={t('logout.title')}
+        description={t('logout.description')}
+        confirmLabel={t('logout.confirm')}
+        cancelLabel={t('logout.cancel')}
+        onConfirm={handleLogout}
+        pending={logout.isPending}
+      />
+
+      <ItemDetailModal item={liveSelectedItem} steamId={steamId} readOnly={isAggregate} open={!!selectedItem} onOpenChange={(open) => { if (!open) setSelectedItem(null); }} />
     </>
   );
 }

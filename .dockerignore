@@ -1,0 +1,11 @@
+node_modules
+dist
+release
+data
+.git
+.github
+.vscode
+*.log
+.env
+Dockerfile
+docker-compose.yml

@@ -1,9 +1,13 @@
 import * as historyQueries from '../../db/queries/history.ts';
 import { getOldAveragePrice } from '../../db/queries/prices.ts';
+import { isAllProfiles } from '../../../shared/constants/profiles.ts';
 import { logger } from '../../lib/logger.ts';
 import type { ChangeInfo, HistoryPoint } from '../../../shared/types/api.ts';
 
 export function saveSnapshot(steamId: string, totalValue: number, itemCount: number, source = 'steam') {
+  // The aggregate is computed on the fly from per-profile rows — persisting it
+  // would double-count every SUM. Hard guard, not a caller convention.
+  if (isAllProfiles(steamId)) return;
   try {
     historyQueries.saveSnapshot(steamId, totalValue, itemCount, source);
     logger.info(`[History] Saved ${source} snapshot for ${steamId}: \u20ac${totalValue.toFixed(2)}, ${itemCount} items`);
@@ -14,7 +18,9 @@ export function saveSnapshot(steamId: string, totalValue: number, itemCount: num
 
 export function getHistory(steamId: string, days: number = 30, source = 'steam'): HistoryPoint[] {
   try {
-    const records = historyQueries.getHistory(steamId, days, source);
+    const records = isAllProfiles(steamId)
+      ? historyQueries.getAggregatedHistory(days, source)
+      : historyQueries.getHistory(steamId, days, source);
     return records.map((r) => ({
       date: r.timestamp,
       value: r.total_value,
@@ -28,7 +34,9 @@ export function getHistory(steamId: string, days: number = 30, source = 'steam')
 
 export function get24hChange(steamId: string, currentValue: number, source = 'steam'): ChangeInfo {
   try {
-    const yesterday = historyQueries.getYesterdayValue(steamId, source);
+    const yesterday = isAllProfiles(steamId)
+      ? historyQueries.getAggregatedYesterdayValue(source)
+      : historyQueries.getYesterdayValue(steamId, source);
 
     if (!yesterday) {
       return { change: 0, percentage: 0, hasData: false };

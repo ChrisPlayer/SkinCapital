@@ -72,6 +72,19 @@ export function getAllProfiles(): ProfileRow[] {
     .all() as ProfileRow[];
 }
 
+/**
+ * Identity fields only — no price JOIN. Safe for the 3s status poll where
+ * getProfileBySteamId's aggregate subquery would be needless load.
+ */
+export function getProfileLite(
+  steamId: string,
+): { username: string; persona_name: string | null; avatar_url: string | null } | undefined {
+  const sqlite = getSqlite();
+  return sqlite
+    .prepare('SELECT username, persona_name, avatar_url FROM profiles WHERE steam_id = ?')
+    .get(steamId) as { username: string; persona_name: string | null; avatar_url: string | null } | undefined;
+}
+
 export function getProfileBySteamId(steamId: string): ProfileRow | undefined {
   const sqlite = getSqlite();
   return sqlite

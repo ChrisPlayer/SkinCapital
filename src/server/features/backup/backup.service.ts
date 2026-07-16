@@ -3,6 +3,7 @@ import path from 'path';
 import type { Statement } from 'better-sqlite3';
 import { getSqlite } from '../../db/client.ts';
 import { logger } from '../../lib/logger.ts';
+import { DATA_DIR } from '../../lib/paths.ts';
 import type { BackupFileInfo } from '../../../shared/types/api.ts';
 
 // Anti data-loss: a timestamped JSON dump of the user-meaningful tables. The
@@ -14,8 +15,9 @@ const FILE_PREFIX = 'backup-';
 const FILE_SUFFIX = '.json';
 
 // Resolved lazily so tests can point it at a temp dir via env before first use.
+// Default anchors under DATA_DIR (Docker volume / Windows exe relocation).
 function backupDir(): string {
-  return process.env.BACKUP_DIR || path.join(process.cwd(), 'data', 'backups');
+  return process.env.BACKUP_DIR || path.join(DATA_DIR, 'backups');
 }
 
 export interface BackupResult {

@@ -65,7 +65,7 @@ export function SteamGuardForm({ onSubmit, isLoading, error, canConfirmMobile }:
         <button
           type="submit"
           disabled={isLoading || !code.trim()}
-          className="w-full h-11 rounded-xl btn-accent font-semibold text-sm glow-cyan disabled:opacity-50 disabled:pointer-events-none"
+          className="w-full h-11 rounded-xl btn-accent font-semibold text-sm disabled:opacity-50 disabled:pointer-events-none"
         >
           {isLoading ? t('auth.validating') : t('auth.validate')}
         </button>

@@ -29,6 +29,9 @@ interface ItemDetailModalProps {
   steamId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Aggregated view: items lose their owner, so per-profile writes (buy
+   *  price, alerts) are hidden — the backend rejects them for 'all' anyway. */
+  readOnly?: boolean;
 }
 
 function parsePriceInput(raw: string): number | null {
@@ -54,7 +57,7 @@ function sparklinePath(points: Array<{ date: string; price: number }>): { line: 
   return { line, fill: `${line} L${SPARK_W},${SPARK_H} L0,${SPARK_H} Z` };
 }
 
-export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetailModalProps) {
+export function ItemDetailModal({ item, steamId, open, onOpenChange, readOnly = false }: ItemDetailModalProps) {
   const { t, priceProvider } = useI18n();
   const toast = useToast();
   const priceSource = priceProvider === 'csfloat' ? 'csfloat' : priceProvider === 'skinport' ? 'skinport' : 'steam';
@@ -304,6 +307,7 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
           )}
 
           {/* Buy price / P&L */}
+          {!readOnly && (
           <div className="mb-3 p-3 rounded-xl bg-sf-body border border-white/[0.06] text-left">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <span className="text-xs text-gray-400 whitespace-nowrap">{t('item.buyPrice')}</span>
@@ -351,9 +355,12 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
               </div>
             )}
           </div>
+          )}
 
           {/* Custom price alert — server-side trigger checks run on fresh STEAM
-              prices only, so say so even when the modal displays another source. */}
+              prices only, so say so even when the modal displays another source.
+              Hidden in read-only (aggregate) mode: alerts belong to one profile. */}
+          {!readOnly && (
           <div className="mb-5 p-3 rounded-xl bg-sf-body border border-white/[0.06] text-left">
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <span className="text-xs text-gray-400 whitespace-nowrap" title={t('alerts.steamBasis')}>
@@ -420,6 +427,7 @@ export function ItemDetailModal({ item, steamId, open, onOpenChange }: ItemDetai
               </div>
             )}
           </div>
+          )}
 
           {/* Market links */}
           <div className="space-y-2">

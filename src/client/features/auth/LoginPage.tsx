@@ -203,7 +203,7 @@ export function LoginPage() {
               <button
                 type="submit"
                 disabled={login.isPending}
-                className="w-full h-11 rounded-xl btn-accent font-semibold text-sm glow-cyan disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
+                className="w-full h-11 rounded-xl btn-accent font-semibold text-sm disabled:opacity-50 disabled:pointer-events-none flex items-center justify-center gap-2"
               >
                 <LogIn className="w-4 h-4" />
                 {login.isPending ? t('auth.connecting') : t('auth.login')}

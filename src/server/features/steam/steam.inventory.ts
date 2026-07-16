@@ -1,5 +1,6 @@
 import { steamClient } from './steam.client.ts';
 import { resolveItem } from './steam.schema.ts';
+import { setPhase, updatePhaseDetail } from './steam.status.ts';
 import { logger } from '../../lib/logger.ts';
 import type { InsertItem } from '../../db/queries/items.ts';
 import type SteamCommunity from 'steamcommunity';
@@ -78,7 +79,9 @@ export async function getStorageUnits(): Promise<{ caskets: CasketInfo[]; enumer
     // starts immediately, so give it a realistic budget instead of 5s — otherwise
     // first fetches silently miss Storage Units and later ones abort on anti-wipe.
     logger.info('[Inventory] Not connected to GC, waiting (up to 60s)...');
+    updatePhaseDetail({ waitingForGC: true });
     const connected = await steamClient.waitForGC(60000);
+    updatePhaseDetail({ waitingForGC: false });
     if (!connected) {
       logger.warn('[Inventory] GC connection timeout — could NOT enumerate Storage Units.');
       return { caskets: [], enumerated: false };
@@ -195,6 +198,7 @@ export async function getAllStorageUnitItems(): Promise<StorageUnitItemsResult> 
   const skipped = caskets.length - nonEmpty.length;
   if (skipped > 0) logger.info(`[Inventory] Skipping ${skipped} empty Storage Units`);
   logger.info(`[Inventory] Loading ${nonEmpty.length} non-empty Storage Units...`);
+  updatePhaseDetail({ loadedUnits: 0, totalUnits: nonEmpty.length });
 
   for (const casket of nonEmpty) {
     let retries = 3;
@@ -209,6 +213,7 @@ export async function getAllStorageUnitItems(): Promise<StorageUnitItemsResult> 
         allItems.push(...items);
         loadedUnits++;
         loaded = true;
+        updatePhaseDetail({ loadedUnits });
       } catch (err) {
         logger.error(`[Inventory] Failed to load casket ${casket.casketId} (Attempt ${4 - retries}/3):`, (err as Error).message);
         retries--;
@@ -276,7 +281,9 @@ export async function getMainInventory(): Promise<{ items: InsertItem[]; ok: boo
 }
 
 export async function getAllInventory(): Promise<InventoryFetchResult> {
+  setPhase('fetching_inventory', { owner: 'refresh' });
   const main = await getMainInventory();
+  setPhase('fetching_storage', { owner: 'refresh' });
   const storageResult = await getAllStorageUnitItems();
   const storageItems = storageResult.items;
 

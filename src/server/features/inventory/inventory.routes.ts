@@ -15,6 +15,12 @@ import {
   getLastRefreshOutcome,
 } from './inventory.service.ts';
 import { requireSteamConnection } from '../auth/auth.middleware.ts';
+import { listInventoryEvents } from '../../db/queries/inventory-events.ts';
+import { steamClient } from '../steam/steam.client.ts';
+import { getPhaseState } from '../steam/steam.status.ts';
+import { getProfileLite } from '../../db/queries/profiles.ts';
+import { isAllProfiles } from '../../../shared/constants/profiles.ts';
+import type { SteamStatusInfo } from '../../../shared/types/api.ts';
 import { logger } from '../../lib/logger.ts';
 
 const router = Router();
@@ -89,12 +95,39 @@ router.post('/prices/cancel', (req, res) => {
   }
 });
 
+// Inventory movements (items gained/removed between two refreshes).
+router.get('/inventory/events', (req, res) => {
+  try {
+    const steamId = req.query.steamId as string | undefined;
+    if (!steamId) {
+      return res.status(400).json({ error: 'steamId query parameter required' });
+    }
+    const limit = Math.min(200, Math.max(1, parseInt(req.query.limit as string) || 50));
+    const rows = listInventoryEvents(isAllProfiles(steamId) ? null : steamId, limit);
+    res.json(
+      rows.map((r) => ({
+        id: r.id,
+        steamId: r.steam_id,
+        marketHashName: r.market_hash_name,
+        delta: r.delta,
+        priceEur: r.price_eur,
+        createdAt: r.created_at,
+      })),
+    );
+  } catch (err) {
+    logger.error('[Inventory] Events error:', err);
+    res.status(500).json({ error: 'Failed to load inventory events' });
+  }
+});
+
 router.get('/inventory/status', (req, res) => {
-  const steamId = (req.query.steamId as string | undefined) || undefined;
+  const rawSteamId = (req.query.steamId as string | undefined) || undefined;
+  // 'all' behaves as a wildcard: report any in-flight refresh, whatever the account.
+  const steamId = isAllProfiles(rawSteamId) ? undefined : rawSteamId;
   const requestedSource = req.query.source === 'csfloat' ? 'csfloat' : req.query.source === 'skinport' ? 'skinport' : 'steam';
   const inventoryRefreshing = isInventoryRefreshInProgress(steamId);
   const priceRefreshing = isPriceRefreshInProgress(steamId);
-  const activePriceSource = priceRefreshing && steamId ? getActivePriceRefreshSource(steamId) : null;
+  const activePriceSource = priceRefreshing ? getActivePriceRefreshSource(steamId) : null;
   const priceRefreshingForRequestedSource = priceRefreshing && activePriceSource === requestedSource;
   const progress = inventoryRefreshing
     ? getRefreshProgress(steamId)
@@ -103,14 +136,38 @@ router.get('/inventory/status', (req, res) => {
       : null;
   const syncType = inventoryRefreshing ? 'inventory' : priceRefreshingForRequestedSource ? 'prices' : null;
 
+  // The phase's steamId survives the mid-refresh Steam logout, so the widget
+  // keeps showing WHICH account is being worked on until the pipeline ends.
+  const phaseState = getPhaseState();
+  const clientStatus = steamClient.getStatus();
+  const activeSteamId = phaseState.steamId ?? clientStatus.steamId;
+  const profileRow = activeSteamId ? getProfileLite(activeSteamId) : undefined;
+  const steam: SteamStatusInfo = {
+    phase: phaseState.phase,
+    phaseSince: phaseState.since,
+    phaseDetail: phaseState.detail,
+    steamId: activeSteamId,
+    profile: profileRow
+      ? {
+          username: profileRow.username,
+          personaName: profileRow.persona_name,
+          avatarUrl: profileRow.avatar_url,
+        }
+      : null,
+    isLoggedIn: clientStatus.isLoggedIn,
+    isConnectedToGC: clientStatus.isConnectedToGC,
+  };
+
   res.json({
     isRefreshing: inventoryRefreshing || priceRefreshingForRequestedSource,
     syncType,
     source: syncType === 'prices' ? activePriceSource : null,
     lastRefresh: getLastRefresh(steamId, requestedSource)?.toISOString() ?? null,
     progress,
-    // Lets the client explain a refresh that ended without changing anything
-    // (e.g. the anti-wipe abort) instead of silently stopping the spinner.
+    steam,
+    // Per-profile outcome of the last FULL refresh — the event journal is the
+    // live notification channel; this field lets a fresh page load explain a
+    // refresh that ended without changing anything (e.g. the anti-wipe abort).
     lastOutcome: steamId ? getLastRefreshOutcome(steamId) : null,
   });
 });

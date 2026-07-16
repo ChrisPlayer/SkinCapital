@@ -81,7 +81,7 @@ const translations = {
   'nav.terminal': { fr: 'Navigation', en: 'Navigation' },
   'nav.account': { fr: 'Compte', en: 'Account' },
   'nav.profiles': { fr: 'Profils', en: 'Profiles' },
-  'nav.logout': { fr: 'Déconnexion', en: 'Logout' },
+  'nav.logout': { fr: 'Déconnecter Steam', en: 'Sign out of Steam' },
   'nav.settings': { fr: 'Paramètres', en: 'Settings' },
 
   // ── Dashboard header ──
@@ -220,7 +220,7 @@ const translations = {
   },
 
   // ── Daily History ──
-  'history.title': { fr: 'Historique Journalier', en: 'Daily History' },
+  'history.title': { fr: 'Historique journalier', en: 'Daily History' },
   'history.noHistory': { fr: 'Aucun historique', en: 'No History' },
 
   // ── Item Detail Modal ──
@@ -323,6 +323,67 @@ const translations = {
   'inventory.includeStorage': { fr: 'Inclure Storage Units', en: 'Include Storage Units' },
   'storage.emptyUnits': { fr: 'Storage Units vides', en: 'Empty Storage Units' },
   'storage.showAll': { fr: 'Tout afficher ({n})', en: 'Show all ({n})' },
+
+  // ── Account status widget ──
+  'status.connected': { fr: 'Connecté', en: 'Connected' },
+  'status.disconnected': { fr: 'Déconnecté', en: 'Disconnected' },
+  'status.phase.logging_in': { fr: 'Connexion Steam…', en: 'Signing in to Steam…' },
+  'status.phase.awaiting_steam_guard': { fr: 'En attente de Steam Guard…', en: 'Waiting for Steam Guard…' },
+  'status.phase.launching_cs2': { fr: 'Démarrage CS2…', en: 'Starting CS2…' },
+  'status.phase.waiting_gc': { fr: 'Attente du Game Coordinator…', en: 'Waiting for Game Coordinator…' },
+  'status.phase.fetching_inventory': { fr: 'Scan de l\'inventaire…', en: 'Scanning inventory…' },
+  'status.phase.fetching_storage': { fr: 'Scan des storage units', en: 'Scanning storage units' },
+  'status.phase.fetching_prices': { fr: 'Récupération des prix', en: 'Fetching prices' },
+  'status.phase.disconnecting': { fr: 'Déconnexion…', en: 'Disconnecting…' },
+
+  // ── Logout confirmation ──
+  'logout.title': { fr: 'Déconnecter la session Steam ?', en: 'Sign out of the Steam session?' },
+  'logout.description': {
+    fr: 'La session Steam active sera fermée. Tes données et l\'historique restent consultables ; il faudra te reconnecter pour rafraîchir l\'inventaire.',
+    en: 'The active Steam session will be closed. Your data and history stay available; you\'ll need to log in again to refresh the inventory.',
+  },
+  'logout.confirm': { fr: 'Déconnecter', en: 'Sign out' },
+  'logout.cancel': { fr: 'Annuler', en: 'Cancel' },
+  'toast.loggedOut': { fr: 'Session Steam déconnectée', en: 'Steam session signed out' },
+
+  // ── Activity tab & live toasts ──
+  'nav.activity': { fr: 'Activité', en: 'Activity' },
+  'toast.refreshStarted': { fr: 'Synchronisation démarrée', en: 'Sync started' },
+  'toast.refreshDone': { fr: 'Inventaire synchronisé', en: 'Inventory synced' },
+  'toast.pricesRefreshDone': { fr: 'Prix mis à jour', en: 'Prices updated' },
+  'toast.alertTriggered': { fr: 'Alerte déclenchée : ', en: 'Alert triggered: ' },
+  'toast.inventoryChanged': { fr: 'Inventaire modifié', en: 'Inventory changed' },
+  'feed.movements': { fr: 'Mouvements d\'inventaire', en: 'Inventory movements' },
+  'movements.none': { fr: 'Aucun mouvement détecté entre les syncs.', en: 'No movements detected between syncs.' },
+  'movements.added': { fr: 'Ajouté', en: 'Added' },
+  'movements.removed': { fr: 'Retiré', en: 'Removed' },
+
+  // ── Aggregated view ──
+  'overview.allAccounts': { fr: 'Tous les comptes', en: 'All accounts' },
+  'overview.allAccountsSubtitle': { fr: 'Vue agrégée de tous les comptes', en: 'Aggregated view across all accounts' },
+  'dashboard.accountBreakdown': { fr: 'Répartition par compte', en: 'Breakdown by account' },
+
+  // ── Settings sections ──
+  'settings.sectionAppearance': { fr: 'Apparence', en: 'Appearance' },
+  'settings.sectionPricing': { fr: 'Prix', en: 'Pricing' },
+  'settings.sectionAutomation': { fr: 'Automatisation', en: 'Automation' },
+  'settings.sectionData': { fr: 'Données', en: 'Data' },
+  'settings.trackedSources': { fr: 'Sources suivies', en: 'Tracked sources' },
+  'settings.trackedSourcesDesc': {
+    fr: 'Sources récupérées par les prix automatiques. Coche au moins deux sources pour activer le comparateur.',
+    en: 'Sources fetched by the automatic price refresh. Check at least two to enable the comparator.',
+  },
+
+  // ── Source comparator ──
+  'nav.compare': { fr: 'Comparateur', en: 'Comparator' },
+  'compare.title': { fr: 'Comparateur de sources', en: 'Source comparator' },
+  'compare.caption': {
+    fr: 'Dernier prix connu par source pour tes items. Écart calculé par rapport à la source primaire.',
+    en: 'Latest known price per source for your items. Spread computed against the primary source.',
+  },
+  'compare.item': { fr: 'Item', en: 'Item' },
+  'compare.spread': { fr: 'Écart', en: 'Spread' },
+  'compare.none': { fr: 'Pas encore de prix multi-sources. Lance un refresh prix sur chaque source suivie.', en: 'No multi-source prices yet. Run a price refresh for each tracked source.' },
 } as const;
 
 export type TranslationKey = keyof typeof translations;

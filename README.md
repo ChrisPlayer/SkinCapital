@@ -1,175 +1,202 @@
-# SkinCapital — CS2 Inventory Tracker
+# SkinCapital
 
-Tracker d'inventaire CS2 avec support Storage Units, prix multi-sources (Steam Market / CSFloat / Skinport) et historique de valeur.
+CS2 inventory tracker with Storage Units support, multi-source pricing (Steam Market / CSFloat / Skinport) and value history.
 
-**Stack** : Express + TypeScript / React + Vite / SQLite (better-sqlite3, SQL brut) / Tailwind
+**Stack**: Express + TypeScript / React + Vite / SQLite (better-sqlite3) / shadcn/ui + Tailwind
 
-## 💾 Installation simple (Windows — aucune connaissance requise)
+## Installation
 
-➡️ **[Télécharger la dernière version](https://github.com/ChrisPlayer/SkinCapital/releases/latest)** (`SkinCapital-portable-win64-*.zip`)
+### Windows
 
-1. Décompressez le zip où vous voulez (clic droit → *Extraire tout*)
-2. Double-cliquez sur **SkinCapital** → votre navigateur s'ouvre tout seul sur l'application
-3. Pour arrêter : double-cliquez sur **Arreter-SkinCapital**
+➡️ **[Download the latest release](https://github.com/ChrisPlayer/SkinCapital/releases/latest)** (`SkinCapital-win-x64-v*.zip`)
 
-Rien d'autre à installer (Node est embarqué). Vos données et votre connexion Steam restent sur **votre** ordinateur. Voir le `LISEZMOI.txt` inclus dans le zip.
+1. Extract the zip anywhere (right click → *Extract All*)
+2. Double-click **SkinCapital.exe**: a window opens with the server logs, then your browser opens on the app automatically
+3. To stop: close the window (or Ctrl+C)
 
-> Mainteneur : le pack se régénère avec `npm run package:win` (sortie dans `release/`), puis se publie avec `gh release create`.
+Nothing else to install. Your data and your Steam login stay on **your** computer (`data\` folder next to the exe). See the `README.txt` included in the zip.
+
+### Docker
+
+Image published to GitHub Container Registry on every release:
+
+```bash
+docker run -d --name skincapital \
+  -p 3000:3000 \
+  -v skincapital-data:/data \
+  ghcr.io/chrisplayer/skincapital:latest
+```
+
+Or with the provided [`docker-compose.yml`](docker-compose.yml): `docker compose up -d`. The app listens on `http://localhost:3000`; if you access it through another URL (LAN IP, domain), add it to `ALLOWED_ORIGINS` (anti-CSRF) and put it behind HTTPS before exposing the Steam login beyond the machine.
 
 ---
 
-La suite de ce document concerne l'installation **développeur** (depuis les sources).
+The rest of this document covers the **developer** setup (from sources).
 
-## Prérequis
+## Requirements
 
-- **Node 22** (le champ `engines` impose `>=22 <23` et un fichier `.nvmrc` est fourni).
-  Le module natif `better-sqlite3` ne compile pas sur Node 24 — restez sur Node 22.
+- **Node 22** (the `engines` field enforces `>=22 <23` and a `.nvmrc` file is provided).
+  The native module `better-sqlite3` does not compile on Node 24: stay on Node 22.
 
 ## Quick Start
 
 ```bash
-# 1. Installer
+# 1. Install
 npm install
 
-# 2. Configurer
+# 2. Configure
 cp .env.example .env
-# Editer .env : mettre un vrai SESSION_SECRET (voir .env.example pour la commande)
+# Edit .env: set a real SESSION_SECRET (see .env.example for the command)
 
 # 3. Dev (hot-reload frontend + backend)
 npm run dev
 
-# 4. Ouvrir http://localhost:5173
+# 4. Open http://localhost:5173
 ```
 
-En production :
+In production:
 
 ```bash
-npm run build
-npm start
-# Ouvrir http://localhost:3000
+npm run build        # client (vite) + server bundle (esbuild) into dist/
+npm run start:dist   # runs dist/server/server.cjs
+# Open http://localhost:3000
 ```
+
+Without `SESSION_SECRET` in the `.env`, the server generates one on first start and persists it in `data/.session-secret`; setting one explicitly still takes precedence.
 
 ## Configuration (.env)
 
-| Variable | Description | Defaut |
+| Variable | Description | Default |
 |---|---|---|
-| `PORT` | Port du serveur Express | `3000` |
-| `HOST` | Adresse d'ecoute. Ne changer que pour exposer sur le LAN, et uniquement derriere HTTPS | `127.0.0.1` |
-| `SESSION_SECRET` | Signe le cookie de session et chiffre les proxies stockes (AES-256-GCM) | - |
-| `ALLOWED_ORIGINS` | Origines navigateur autorisees pour CORS + CSRF (ajouter votre host/IP LAN) | `http://localhost:5173,...` |
-| `REFRESH_INTERVAL` | Auto-refresh inventaire (minutes) | `10` |
-| `STEAM_PRICING_MODE` | `auto` / `proxy` / `direct` — modifiable aussi depuis la page Parametres | `auto` |
-| `STEAM_PROXIES` | Proxies payants optionnels (`host:port:user:pass` ou `http://user:pass@host:port`), configurables aussi depuis l'UI | - |
-| `STEAM_DIRECT_INTERVAL_MS` | Espacement (ms) entre requetes Steam en mode direct | `3500` |
-| `PRICE_CACHE_TTL_HOURS` | Duree (heures) pendant laquelle un prix en cache est considere frais | `20` |
-| `SKINPORT_TTL_MS` | TTL (ms) du cache de la liste de prix bulk Skinport | `600000` |
-| `CSFLOAT_API_KEY` | Cle API CSFloat (requise en pratique, sinon `403`) | - |
-| `NODE_ENV` | `development` ou `production` | `development` |
+| `PORT` | Express server port | `3000` |
+| `HOST` | Bind address. Only change to expose on the LAN, and only behind HTTPS | `127.0.0.1` |
+| `SESSION_SECRET` | Signs the session cookie and encrypts stored proxies (AES-256-GCM) | auto-generated, persisted in `DATA_DIR` |
+| `DATA_DIR` | Data folder (SQLite DB, schema cache, secret) | `./data` |
+| `OPEN_BROWSER` | Opens the browser on startup (`1`/`true`): used by the Windows pack | off |
+| `ALLOWED_ORIGINS` | Browser origins allowed for CORS + CSRF (add your LAN host/IP) | `http://localhost:5173,...` |
+| `REFRESH_INTERVAL` | Inventory auto-refresh (minutes) | `10` |
+| `STEAM_PRICING_MODE` | `auto` / `proxy` / `direct`, also configurable from the Settings page | `auto` |
+| `STEAM_PROXIES` | Optional paid proxies (`host:port:user:pass` or `http://user:pass@host:port`), also configurable from the UI | - |
+| `STEAM_DIRECT_INTERVAL_MS` | Spacing (ms) between Steam requests in direct mode | `3500` |
+| `PRICE_CACHE_TTL_HOURS` | How long (hours) a cached price is considered fresh | `20` |
+| `SKINPORT_TTL_MS` | TTL (ms) of the Skinport bulk price list cache | `600000` |
+| `CSFLOAT_API_KEY` | CSFloat API key (required in practice, otherwise `403`) | - |
+| `NODE_ENV` | `development` or `production` | `development` |
 | `LOG_LEVEL` | `debug`, `info`, `warn`, `error` | `info` |
+| `LOG_FILE` | Also copies logs to this file (rotated at 5 MB). The Windows pack sets it to `data\server.log` | off |
 
-Toutes les variables de tuning fin (workers, timeouts, cooldowns, verification des proxies, cadence CSFloat...) sont documentees dans [`.env.example`](.env.example).
+All fine-tuning variables (workers, timeouts, cooldowns, proxy verification, CSFloat pacing...) are documented in [`.env.example`](.env.example).
 
 ## Scripts
 
-| Commande | Description |
+| Command | Description |
 |---|---|
 | `npm run dev` | Dev mode (Express + Vite hot-reload) |
-| `npm run build` | Build production (Vite) |
-| `npm start` | Serveur production |
-| `npm test` | Tests unitaires (Vitest) |
-| `npm run typecheck` | Verification TypeScript |
+| `npm run build` | Production build: client (Vite) + server bundle (esbuild) |
+| `npm start` | Server from sources (tsx) |
+| `npm run start:dist` | Server from the production bundle |
+| `npm test` | Unit tests (Vitest) |
+| `npm run typecheck` | TypeScript check |
 | `npm run lint` | ESLint |
-| `npm run package:win` | Pack portable Windows (sortie dans `release/`) |
+| `npm run package:win` | Windows pack (`SkinCapital.exe`, output in `release/`) |
 
-## Deploiement Proxmox (mainteneur)
+## Release (maintainers)
 
-L'app tourne 24/7 dans un LXC Debian (systemd `cs2.service`, app dans `/opt/cs2`, port 3000).
-La box n'a **aucun outillage de dev** : le client se build **localement** et le `dist/` pre-construit est pousse tel quel.
+Pushing a `v*` tag triggers the [release.yml](.github/workflows/release.yml) workflow:
+the Windows zip (Node SEA exe) is built and attached to the GitHub Release with
+generated notes, and the multi-arch Docker image is pushed to
+`ghcr.io/chrisplayer/skincapital` (tags `latest`, `X.Y.Z`, `X.Y`).
 
 ```bash
-scripts/deploy-proxmox.sh          # lint+typecheck+tests, build, upload, restart, health check
+npm version minor        # bump + tag vX.Y.Z
+git push --follow-tags
+```
+
+## Proxmox / LXC deployment (self-hosted 24/7)
+
+The reference instance runs in a Debian LXC (systemd `cs2.service`, app in `/opt/cs2`, port 3000).
+The container has **no dev tooling**: the client is built locally and the prebuilt `dist/` is shipped as-is.
+
+```bash
+scripts/deploy-proxmox.sh          # checks, local build, upload, restart, health check
 scripts/deploy-proxmox.sh --skip-checks
 ```
 
-Le script deploie `HEAD` (via `git archive`) : commitez avant de deployer. `.env` et `data/`
-du conteneur sont preserves (jamais dans l'archive). Hote/CT surchargables par env : `PVE_HOST`, `CTID`.
+The script deploys `HEAD` (via `git archive`): commit before deploying. The container's
+`.env` and `data/` are preserved (never inside the archive). Host/CT overridable via
+`PVE_HOST` and `CTID` env vars.
 
-## Fonctionnalites
+## Features
 
-- **3 sources de prix** :
-  - **Steam Market** — pool de proxies (proxies residentiels payants) ou mode direct throttle sans proxy (`STEAM_PRICING_MODE=auto|proxy|direct`)
-  - **CSFloat** — via cle API
-  - **Skinport** — endpoint bulk, aucune cle requise
-- **Une source a la fois** dans la vue principale (au choix : Steam, Steam net de frais, CSFloat, Skinport) ; le modal de detail d'un item affiche les prix des trois sources cote a cote
-- **Page Parametres** : choix de la source de prix, mode pricing (auto/proxy/direct), gestion des proxies et langue — directement depuis l'UI, sans toucher au `.env`
-- **Storage Units** : lecture des caskets CS2 via Game Coordinator, inclus dans l'inventaire et le dashboard
-- **Multi-profils** : suivi de plusieurs comptes Steam, selection depuis la page d'accueil, suppression possible ; vue combinee (valeur totale + top items) sur la page d'accueil
-- **Historique** : graphique d'evolution de valeur (7/30/90 jours), par source de prix
-- **Patterns rares** : detection blue gem (Case Hardened) et floats extremes, badge + filtre dedie
-- **Tendances** : top variations du portefeuille + tendances marche (items deja suivis)
-- **Alertes de prix** : seuils personnalises par item (verifies sur le prix Steam)
-- **Recherche & tri** : temps reel, par prix/nom/float/quantite + filtres rarete/type/qualite
-- **Export CSV** : telechargement de l'inventaire complet
-- **Sauvegarde auto** : dump JSON quotidien (03:00, 14 conserves), telechargement et **restauration** depuis la page Parametres
-- **i18n** : interface FR / EN
-- **Reload quotidien des prix** : heure configurable depuis l'UI (aucune connexion Steam requise)
+- **3 price sources**:
+  - **Steam Market**: proxy pool (paid residential proxies) or throttled proxy-less direct mode (`STEAM_PRICING_MODE=auto|proxy|direct`)
+  - **CSFloat**: via API key
+  - **Skinport**: bulk endpoint, no key required
+- **One source at a time** in the main view (Steam, Steam net of fees, CSFloat or Skinport); the item detail modal shows all three sources side by side
+- **Settings page**: price source, pricing mode (auto/proxy/direct), proxy management and language, straight from the UI, no `.env` editing
+- **Storage Units**: reads CS2 caskets through the Game Coordinator, included in the inventory and the dashboard
+- **Multi-profile**: track several Steam accounts, selectable from the home page
+- **History**: value evolution chart (7/30/90 days)
+- **Search & sort**: real-time, by price/name/float
+- **CSV export**: download the full inventory
+- **i18n**: FR / EN interface
+- **Auto-refresh**: configurable cron
 
 ## Structure
 
 ```
 src/
-  shared/          Types & constantes partages (client + server)
+  shared/          Types & constants shared by client + server
   server/
-    db/            Schema SQL + queries SQLite (better-sqlite3)
+    db/            SQLite schema (auto-init) + queries
     features/
-      auth/        Login Steam, middleware auth
-      steam/       Client Steam + inventaire + schema items
+      auth/        Steam login, auth middleware
+      steam/       Steam client + inventory + item schema
       inventory/   Refresh, dashboard data, cron jobs
-      pricing/     Sources de prix (Steam proxy/direct, CSFloat, Skinport), queues + cache
-      backup/      Sauvegarde/restauration JSON (quotidienne + manuelle)
-      history/     Snapshots journaliers
-      export/      Export CSV
-      profiles/    Profils suivis
-      settings/    Reglages persistes (mode pricing, proxies chiffres)
+      pricing/     Price sources (Steam proxy/direct, CSFloat, Skinport), queues + cache
+      history/     Daily snapshots
+      export/      CSV export
+      profiles/    Tracked profiles
+      settings/    Persisted settings (pricing mode, encrypted proxies)
     middleware/    Session, security (helmet/cors/rate-limit), error handler
     lib/           Crypto, logger
   client/
     features/
       auth/        Login page + Steam Guard
-      dashboard/   KPIs, graphique, historique, storage units
-      inventory/   Item cards, modal detail (3 prix), float bar, stickers
-      profiles/    Page d'accueil, selection du profil
-      settings/    Source de prix, mode pricing, proxies, langue
-    components/ui/ Composants shadcn
+      dashboard/   KPIs, chart, history, storage units
+      inventory/   Item cards, detail modal (3 prices), float bar, stickers
+      profiles/    Home page, profile selection
+      settings/    Price source, pricing mode, proxies, language
+    components/ui/ shadcn components
     hooks/         useApi, usePolling
     lib/           API client, i18n, formatters, cn
-data/              SQLite DB + cache schema items
+data/              SQLite DB + item schema cache
 ```
 
 ## Troubleshooting
 
-| Probleme | Solution |
+| Problem | Solution |
 |---|---|
-| `npm install` echoue sur better-sqlite3 | Verifier la version de Node : il faut Node 22 (`nvm use`) |
-| Steam Guard demande | Approuver dans l'app mobile Steam, ou entrer le code 5 chiffres |
-| Timeout GC | Le Game Coordinator CS2 peut etre instable, l'app retente auto |
-| Rate limit 429 | Le cooldown est applique par worker/proxy, les autres workers continuent |
-| CSFloat 401/403 | Verifier `CSFLOAT_API_KEY` (`raw` ou `Bearer <key>`), puis redemarrer |
-| Storage Units vides | Verifier que les caskets contiennent des items |
-| DB corrompue | Supprimer `data/inventory.db` et redemarrer |
-| Port occupe | Changer `PORT` dans `.env` |
+| `npm install` fails on better-sqlite3 | Check your Node version: Node 22 required (`nvm use`) |
+| Steam Guard prompted | Approve in the Steam mobile app, or enter the 5-digit code |
+| GC timeout | The CS2 Game Coordinator can be flaky, the app retries automatically |
+| Rate limit 429 | Cooldown is applied per worker/proxy, the other workers keep going |
+| CSFloat 401/403 | Check `CSFLOAT_API_KEY` (`raw` or `Bearer <key>`), then restart |
+| Empty Storage Units | Check that the caskets actually contain items |
+| Corrupted DB | Delete `data/inventory.db` and restart |
+| Port in use | Change `PORT` in `.env` |
 
-## Securite
+## Security
 
-Outil **auto-heberge, mono-utilisateur** : la frontiere de securite principale est l'ecoute sur `127.0.0.1` par defaut. Pour exposer sur le LAN, definir `HOST` — mais alors **HTTPS fortement conseille** (sinon le mot de passe Steam transite en clair au login).
+**Self-hosted, single-user** tool: the main security boundary is the default `127.0.0.1` bind. To expose on the LAN, set `HOST`, but then **HTTPS is strongly advised** (otherwise the Steam password transits in cleartext at login).
 
-- **Zero credential stocke** : le mot de passe Steam est transmis a `steam-user` puis aussitot oublie — jamais ecrit en DB, sur disque ni dans les logs
-- **Login a chaque session** : approbation via l'app mobile Steam (principal) ou code Steam Guard saisi (fallback). Le bouton Refresh exige donc une session Steam fraiche — c'est voulu
-- **Routes de lecture publiques par design** (usage perso sur reseau de confiance) ; seul le refresh d'inventaire necessite une session Steam
-- Proxies stockes **chiffres AES-256-GCM** au repos (cle derivee de `SESSION_SECRET` via scrypt)
-- Sessions **en memoire uniquement**, purgees au redemarrage du serveur
-- Cookie httpOnly + sameSite strict ; protection CSRF par verification d'Origin sur les ecritures
-- Helmet (CSP, HSTS, XSS protection) ; rate limiting : 10 tentatives auth / 15min, 120 req API / min
-- **Lecture seule** : l'app ne peut pas modifier votre inventaire
-- **Ne commitez jamais** le fichier `.env`
-- Recommande : utiliser un compte alt pour les tests
+- **Zero credential storage**: the Steam password is handed to `steam-user` then immediately forgotten, never written to the DB, to disk or to the logs
+- **Login on every session**: approval via the Steam mobile app (primary) or typed Steam Guard code (fallback). The Refresh button therefore requires a fresh Steam session, by design
+- **Read routes are public by design** (personal use on a trusted network); only the inventory refresh requires a Steam session
+- Proxies stored **encrypted with AES-256-GCM** at rest (key derived from `SESSION_SECRET` via scrypt)
+- Sessions **in memory only**, wiped on server restart
+- httpOnly + sameSite strict cookie; CSRF protection through Origin checks on writes
+- Helmet (CSP, HSTS, XSS protection); rate limiting: 10 auth attempts / 15 min, 120 API req / min
+- **Read-only**: the app cannot modify your inventory
+- **Never commit** the `.env` file
+- Recommended: use an alt account for testing

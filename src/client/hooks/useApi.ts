@@ -233,6 +233,42 @@ export function useRemovePurchase() {
   });
 }
 
+export function useTrackedSources() {
+  return useQuery({
+    queryKey: ['tracked-sources'],
+    queryFn: () => api.settings.getSources(),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useSetTrackedSources() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (sources: Array<'steam' | 'csfloat' | 'skinport'>) => api.settings.setSources(sources),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tracked-sources'] });
+    },
+  });
+}
+
+export function usePriceComparison(steamId: string, enabled = true) {
+  return useQuery({
+    queryKey: ['price-compare', steamId],
+    queryFn: () => api.prices.compare(steamId),
+    enabled: !!steamId && enabled,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useInventoryMovements(steamId: string, limit = 50) {
+  return useQuery({
+    queryKey: ['inventory-movements', steamId, limit],
+    queryFn: () => api.inventory.movements(steamId, limit),
+    enabled: !!steamId,
+    refetchInterval: 60000,
+  });
+}
+
 export function useAlerts(steamId: string) {
   return useQuery({
     queryKey: ['alerts', steamId],

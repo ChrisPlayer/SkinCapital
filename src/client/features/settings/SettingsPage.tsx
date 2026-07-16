@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useI18n } from '../../lib/i18n.tsx';
+import { useI18n, type TranslationKey } from '../../lib/i18n.tsx';
 import {
   usePricingSettings,
   useSetPricingSettings,
@@ -14,19 +14,29 @@ import {
   useRunBackup,
   useBackupList,
   useRestoreBackup,
+  useTrackedSources,
+  useSetTrackedSources,
 } from '../../hooks/useApi.ts';
 import { api } from '../../lib/api-client.ts';
 import { formatDate } from '../../lib/formatters.ts';
 import { useToast } from '../../components/toast.tsx';
 import { PillButton } from '../../components/controls.tsx';
+import { SettingsSection } from './SettingsSection.tsx';
 import { ChevronLeft, Check, Loader2, Play, RotateCcw, Download, Save, History } from 'lucide-react';
 
 type PricingMode = 'auto' | 'proxy' | 'direct';
+type Source = 'steam' | 'csfloat' | 'skinport';
 
 // Accent swatches: cyan (default), violet, gold. Applied via the --accent CSS
 // variable (partial theming: Tailwind sf-cyan classes intentionally stay cyan).
 const ACCENT_COLORS = ['#00ccff', '#a855f7', '#f0b90b'] as const;
 const DEFAULT_ACCENT = ACCENT_COLORS[0];
+
+const TRACKABLE_SOURCES: Array<{ id: Source; labelKey: TranslationKey }> = [
+  { id: 'steam', labelKey: 'settings.steam' },
+  { id: 'csfloat', labelKey: 'settings.csfloat' },
+  { id: 'skinport', labelKey: 'settings.skinport' },
+];
 
 function getInitialAccent(): string {
   const stored = localStorage.getItem('accentColor');
@@ -48,6 +58,22 @@ export function SettingsPage() {
   const [savedFlash, setSavedFlash] = useState(false);
   const savedFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [accent, setAccent] = useState(getInitialAccent);
+
+  // Tracked price sources (daily reload; 2+ sources unlock the comparator tab).
+  const { data: trackedData } = useTrackedSources();
+  const setTracked = useSetTrackedSources();
+  const trackedSources = trackedData?.sources ?? ['steam'];
+
+  const toggleSource = (source: Source) => {
+    if (source === 'steam') return; // mandatory: the app's summaries are steam-based
+    const next = trackedSources.includes(source)
+      ? trackedSources.filter((s) => s !== source)
+      : [...trackedSources, source];
+    setTracked.mutate(next, {
+      onSuccess: () => toast.success(t('toast.settingsSaved')),
+      onError: (err) => toast.error((err as Error).message),
+    });
+  };
 
   // Daily automatic price reload (prices only — no Steam login involved).
   const { data: schedule } = useSchedule();
@@ -77,17 +103,18 @@ export function SettingsPage() {
     );
   };
 
-  // The toggle saves immediately (like the backup toggle) so it never silently
-  // diverges from the server; the Save button remains for time changes.
+  // The enable pill auto-saves (like the backup one): toggling then leaving the
+  // page must not silently lose the change. The time input still goes through
+  // Save. Reverts local state if the write fails.
   const handleToggleSchedule = () => {
     if (!schedule) return;
     const next = !schedEnabled;
     setSchedEnabled(next);
     const [h, m] = schedTime.split(':').map((v) => parseInt(v, 10));
-    if (!Number.isInteger(h) || !Number.isInteger(m)) return;
     saveSchedule.mutate(
-      { enabled: next, hour: h, minute: m },
+      { enabled: next, hour: Number.isInteger(h) ? h : schedule.hour, minute: Number.isInteger(m) ? m : schedule.minute },
       {
+        onSuccess: () => toast.success(t('toast.scheduleSaved')),
         onError: (err) => {
           setSchedEnabled(!next);
           toast.error((err as Error).message);
@@ -114,6 +141,16 @@ export function SettingsPage() {
   const { data: backupList } = useBackupList(showBackupList);
   const restoreBackup = useRestoreBackup();
 
+  const handleRestoreBackup = (file: string) => {
+    // Destructive (replaces every table) but reversible: the server snapshots
+    // the current state right before applying the chosen file.
+    if (!window.confirm(t('settings.backupRestoreConfirm'))) return;
+    restoreBackup.mutate(file, {
+      onSuccess: () => toast.success(t('toast.restoreDone')),
+      onError: (err) => toast.error((err as Error).message || t('toast.restoreFailed')),
+    });
+  };
+
   const handleToggleBackup = () => {
     if (!backup) return;
     saveBackup.mutate(
@@ -129,16 +166,6 @@ export function SettingsPage() {
         else toast.error(t('toast.backupRunning'));
       },
       onError: (err) => toast.error((err as Error).message || t('toast.backupFailed')),
-    });
-  };
-
-  const handleRestoreBackup = (file: string) => {
-    // Destructive (replaces every table) but reversible: the server snapshots
-    // the current state right before applying the chosen file.
-    if (!window.confirm(t('settings.backupRestoreConfirm'))) return;
-    restoreBackup.mutate(file, {
-      onSuccess: () => toast.success(t('toast.restoreDone')),
-      onError: (err) => toast.error((err as Error).message || t('toast.restoreFailed')),
     });
   };
 
@@ -201,9 +228,16 @@ export function SettingsPage() {
     </PillButton>
   );
 
+  const groups: Array<{ id: string; labelKey: TranslationKey }> = [
+    { id: 'appearance', labelKey: 'settings.sectionAppearance' },
+    { id: 'pricing', labelKey: 'settings.sectionPricing' },
+    { id: 'automation', labelKey: 'settings.sectionAutomation' },
+    { id: 'data', labelKey: 'settings.sectionData' },
+  ];
+
   return (
     <div className="min-h-screen">
-      <div className="max-w-2xl mx-auto px-6 py-12">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
         <button
           onClick={() => (steamId ? navigate(`/profile/${steamId}`) : navigate('/'))}
           className="flex items-center gap-2 text-sm text-gray-400 hover:text-white mb-8 transition-colors"
@@ -214,236 +248,286 @@ export function SettingsPage() {
 
         <h1 className="font-display tracking-tight text-2xl font-bold mb-8">{t('settings.title')}</h1>
 
-        {/* Language */}
-        <div className="sf-card p-6 mb-4">
-          <h2 className="text-sm font-semibold text-white mb-4">{t('settings.language')}</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <PillButton active={locale === 'fr'} onClick={() => setLocale('fr')}>
-              {t('settings.french')}
-            </PillButton>
-            <PillButton active={locale === 'en'} onClick={() => setLocale('en')}>
-              {t('settings.english')}
-            </PillButton>
-          </div>
-        </div>
-
-        {/* Accent color */}
-        <div className="sf-card p-6 mb-4">
-          <h2 className="text-sm font-semibold text-white mb-4">{t('settings.accent')}</h2>
-          <div className="flex items-center gap-3">
-            {ACCENT_COLORS.map((hex) => (
-              <button
-                key={hex}
-                onClick={() => applyAccent(hex)}
-                aria-label={`${t('settings.accent')} ${hex}`}
-                aria-pressed={accent === hex}
-                className={`w-9 h-9 rounded-full border-2 transition-all ${
-                  accent === hex ? 'border-white scale-110' : 'border-white/20 hover:border-white/50'
-                }`}
-                style={{ background: hex }}
-              />
+        <div className="lg:grid lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-10 lg:items-start">
+          {/* Anchor nav (desktop only) */}
+          <nav className="hidden lg:block sticky top-12 space-y-1" aria-label={t('settings.title')}>
+            {groups.map((g) => (
+              <a
+                key={g.id}
+                href={`#${g.id}`}
+                className="block px-3 py-2 rounded-lg text-sm text-gray-400 hover:text-white hover:bg-white/[0.04] transition-colors"
+              >
+                {t(g.labelKey)}
+              </a>
             ))}
-          </div>
-        </div>
+          </nav>
 
-        {/* Price Provider (display source) */}
-        <div className="sf-card p-6 mb-4">
-          <h2 className="text-sm font-semibold text-white mb-1">{t('settings.priceProvider')}</h2>
-          <p className="text-xs text-gray-500 mb-4">{t('settings.steamFeesDesc')}</p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <PillButton active={priceProvider === 'steam'} onClick={() => setPriceProvider('steam')}>{t('settings.steam')}</PillButton>
-            <PillButton active={priceProvider === 'steam_fees'} onClick={() => setPriceProvider('steam_fees')}>{t('settings.steamFees')}</PillButton>
-            <PillButton active={priceProvider === 'csfloat'} onClick={() => setPriceProvider('csfloat')}>{t('settings.csfloat')}</PillButton>
-            <PillButton active={priceProvider === 'skinport'} onClick={() => setPriceProvider('skinport')}>{t('settings.skinport')}</PillButton>
-          </div>
-        </div>
-
-        {/* Daily automatic price reload */}
-        <div className="sf-card p-6 mb-4">
-          <h2 className="text-sm font-semibold text-white mb-1">{t('settings.autoPrices')}</h2>
-          <p className="text-xs text-gray-500 mb-4">{t('settings.autoPricesDesc')}</p>
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Both toggle and Save stay disabled until the real config loads,
-                so the local defaults (12:00, enabled) can never overwrite it. */}
-            <PillButton active={schedEnabled} onClick={handleToggleSchedule} disabled={!schedule || saveSchedule.isPending}>
-              {schedEnabled ? t('settings.autoPricesOn') : t('settings.autoPricesOff')}
-            </PillButton>
-            <input
-              type="time"
-              value={schedTime}
-              onChange={(e) => setSchedTime(e.target.value)}
-              disabled={!schedEnabled}
-              aria-label={t('settings.autoPrices')}
-              className="h-10 px-3 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-white font-mono focus:outline-none focus:border-sf-cyan/40 disabled:opacity-50 [color-scheme:dark]"
-            />
-            <button
-              onClick={handleSaveSchedule}
-              disabled={!schedule || saveSchedule.isPending}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl btn-accent font-semibold text-sm disabled:opacity-60"
-            >
-              {saveSchedule.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {t('settings.save')}
-            </button>
-            <button
-              onClick={handleRunNow}
-              disabled={runNow.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
-            >
-              <Play className="w-3.5 h-3.5" />
-              {t('settings.runNow')}
-            </button>
-          </div>
-        </div>
-
-        {/* Automatic backup */}
-        <div className="sf-card p-6 mb-4">
-          <h2 className="text-sm font-semibold text-white mb-1">{t('settings.backup')}</h2>
-          <p className="text-xs text-gray-500 mb-4">{t('settings.backupDesc')}</p>
-          <div className="flex flex-wrap items-center gap-3">
-            <PillButton active={backup?.enabled ?? false} onClick={handleToggleBackup} disabled={!backup || saveBackup.isPending}>
-              {backup?.enabled ? t('settings.backupOn') : t('settings.backupOff')}
-            </PillButton>
-            <button
-              onClick={handleRunBackup}
-              disabled={runBackup.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
-            >
-              {runBackup.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              {t('settings.backupNow')}
-            </button>
-            <a
-              href={api.settings.backupDownloadUrl()}
-              download
-              aria-disabled={!backup?.lastBackup}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white ${
-                backup?.lastBackup ? '' : 'pointer-events-none opacity-50'
-              }`}
-            >
-              <Download className="w-3.5 h-3.5" />
-              {t('settings.backupDownload')}
-            </a>
-            <button
-              onClick={() => setShowBackupList((v) => !v)}
-              disabled={!backup?.lastBackup}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
-            >
-              <History className="w-3.5 h-3.5" />
-              {showBackupList ? t('settings.backupHide') : t('settings.backupList')}
-            </button>
-          </div>
-          <p className="text-[11px] text-gray-500 mt-3">
-            {backup?.lastBackup
-              ? `${t('settings.backupLast')}: ${formatDate(backup.lastBackup.when, locale)} · ${backup.count} ${t('settings.backupCount')}`
-              : t('settings.backupNone')}
-          </p>
-          {showBackupList && backupList && backupList.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-1.5">
-              {backupList.map((b) => (
-                <div key={b.file} className="flex items-center gap-3 text-xs">
-                  <span className="font-mono text-gray-300">{formatDate(b.when, locale)}</span>
-                  <span className="font-mono text-gray-500">{(b.sizeBytes / 1024).toFixed(0)} KB</span>
-                  <span className="ml-auto flex items-center gap-1.5">
-                    <a
-                      href={api.settings.backupDownloadUrl(b.file)}
-                      download
-                      aria-label={`${t('settings.backupDownload')} — ${b.file}`}
-                      title={b.file}
-                      className="w-7 h-7 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-400 hover:text-white"
-                    >
-                      <Download className="w-3 h-3" />
-                    </a>
-                    <button
-                      onClick={() => handleRestoreBackup(b.file)}
-                      disabled={restoreBackup.isPending}
-                      className="h-7 px-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-[11px] text-gray-400 hover:text-sf-cyan hover:border-sf-cyan/40 disabled:opacity-50"
-                    >
-                      {/* variables = the file passed to mutate: spinner only on the in-flight row */}
-                      {restoreBackup.isPending && restoreBackup.variables === b.file
-                        ? <Loader2 className="w-3 h-3 animate-spin" />
-                        : t('settings.backupRestore')}
-                    </button>
-                  </span>
+          <div className="space-y-10">
+            {/* ── Appearance ── */}
+            <div className="space-y-4">
+              <span className="nav-label block" id="appearance">{t('settings.sectionAppearance')}</span>
+              <SettingsSection id="language" title={t('settings.language')}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md">
+                  <PillButton active={locale === 'fr'} onClick={() => setLocale('fr')}>
+                    {t('settings.french')}
+                  </PillButton>
+                  <PillButton active={locale === 'en'} onClick={() => setLocale('en')}>
+                    {t('settings.english')}
+                  </PillButton>
                 </div>
-              ))}
+              </SettingsSection>
+
+              <SettingsSection id="accent" title={t('settings.accent')}>
+                <div className="flex items-center gap-3">
+                  {ACCENT_COLORS.map((hex) => (
+                    <button
+                      key={hex}
+                      onClick={() => applyAccent(hex)}
+                      aria-label={`${t('settings.accent')} ${hex}`}
+                      aria-pressed={accent === hex}
+                      className={`w-9 h-9 rounded-full border-2 transition-all ${
+                        accent === hex ? 'border-white scale-110' : 'border-white/20 hover:border-white/50'
+                      }`}
+                      style={{ background: hex }}
+                    />
+                  ))}
+                </div>
+              </SettingsSection>
             </div>
-          )}
-        </div>
 
-        {/* Price fetch method */}
-        <div className="sf-card p-6 mb-4">
-          <div className="flex items-center justify-between mb-1">
-            <h2 className="text-sm font-semibold text-white">{t('settings.pricingMethod')}</h2>
-            {pricing && (
-              <span className="text-[11px] font-mono text-gray-500">
-                {t('settings.activeMode')}: <span className="text-sf-cyan">{pricing.resolvedMode}</span>
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-gray-500 mb-4">{t('settings.pricingMethodDesc')}</p>
+            {/* ── Pricing ── */}
+            <div className="space-y-4">
+              <span className="nav-label block" id="pricing">{t('settings.sectionPricing')}</span>
+              <SettingsSection
+                id="price-provider"
+                title={t('settings.priceProvider')}
+                description={t('settings.steamFeesDesc')}
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                  <PillButton active={priceProvider === 'steam'} onClick={() => setPriceProvider('steam')}>{t('settings.steam')}</PillButton>
+                  <PillButton active={priceProvider === 'steam_fees'} onClick={() => setPriceProvider('steam_fees')}>{t('settings.steamFees')}</PillButton>
+                  <PillButton active={priceProvider === 'csfloat'} onClick={() => setPriceProvider('csfloat')}>{t('settings.csfloat')}</PillButton>
+                  <PillButton active={priceProvider === 'skinport'} onClick={() => setPriceProvider('skinport')}>{t('settings.skinport')}</PillButton>
+                </div>
+              </SettingsSection>
 
-          <div className="grid grid-cols-3 gap-3 mb-2">
-            {modeButton('auto', t('settings.modeAuto'))}
-            {modeButton('proxy', t('settings.modeProxy'))}
-            {modeButton('direct', t('settings.modeDirect'))}
-          </div>
-          <p className="text-[11px] text-gray-500 mb-4">{t('settings.modeAutoHint')}</p>
+              <SettingsSection
+                id="tracked-sources"
+                title={t('settings.trackedSources')}
+                description={t('settings.trackedSourcesDesc')}
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {TRACKABLE_SOURCES.map(({ id, labelKey }) => (
+                    <PillButton
+                      key={id}
+                      active={trackedSources.includes(id)}
+                      onClick={() => toggleSource(id)}
+                      disabled={id === 'steam' || setTracked.isPending}
+                    >
+                      {trackedSources.includes(id) && <Check className="w-3.5 h-3.5" />}
+                      {t(labelKey)}
+                    </PillButton>
+                  ))}
+                </div>
+              </SettingsSection>
 
-          <div className="mb-3">
-            <div className="text-xs text-gray-400 mb-1">{t('settings.proxiesCurrent')}</div>
-            {pricing && pricing.proxiesMasked.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {pricing.proxiesMasked.map((p, i) => (
-                  <span key={i} className="px-2 py-1 rounded-md bg-white/5 border border-white/[0.08] text-[11px] font-mono text-gray-300">{p}</span>
-                ))}
-              </div>
-            ) : (
-              <span className="text-[11px] text-gray-500">{t('settings.proxiesNone')}</span>
-            )}
-          </div>
+              <SettingsSection
+                id="pricing-method"
+                title={t('settings.pricingMethod')}
+                description={t('settings.pricingMethodDesc')}
+                headerRight={pricing && (
+                  <span className="text-[11px] font-mono text-gray-500">
+                    {t('settings.activeMode')}: <span className="text-[color:var(--accent)]">{pricing.resolvedMode}</span>
+                  </span>
+                )}
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-2">
+                  {modeButton('auto', t('settings.modeAuto'))}
+                  {modeButton('proxy', t('settings.modeProxy'))}
+                  {modeButton('direct', t('settings.modeDirect'))}
+                </div>
+                <p className="text-[11px] text-gray-500 mb-4">{t('settings.modeAutoHint')}</p>
 
-          <label className="block text-xs font-medium text-gray-400 mb-2">{t('settings.proxiesNew')}</label>
-          <textarea
-            value={newProxies}
-            onChange={(e) => setNewProxies(e.target.value)}
-            spellCheck={false}
-            rows={3}
-            placeholder="host:port:user:pass"
-            className="w-full bg-white/5 border border-white/[0.08] rounded-xl p-3 text-xs text-white font-mono resize-y focus:outline-none focus:border-sf-cyan/40"
-          />
-          <p className="text-[11px] text-gray-500 mt-2 mb-3">{t('settings.proxiesHint')}</p>
+                <div className="mb-3">
+                  <div className="text-xs text-gray-400 mb-1">{t('settings.proxiesCurrent')}</div>
+                  {pricing && pricing.proxiesMasked.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {pricing.proxiesMasked.map((p, i) => (
+                        <span key={i} className="px-2 py-1 rounded-md bg-white/5 border border-white/[0.08] text-[11px] font-mono text-gray-300">{p}</span>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-[11px] text-gray-600">{t('settings.proxiesNone')}</span>
+                  )}
+                </div>
 
-          {testProxy.data && (
-            <div className={`text-xs mb-3 ${testProxy.data.ok ? 'text-sf-green' : 'text-red-400'}`}>
-              {testProxy.data.ok ? `✓ IP: ${testProxy.data.ip}` : `✗ ${testProxy.data.error}`}
+                <label className="block text-xs font-medium text-gray-400 mb-2">{t('settings.proxiesNew')}</label>
+                <textarea
+                  value={newProxies}
+                  onChange={(e) => setNewProxies(e.target.value)}
+                  spellCheck={false}
+                  rows={3}
+                  placeholder="host:port:user:pass"
+                  className="w-full bg-white/5 border border-white/[0.08] rounded-xl p-3 text-xs text-white font-mono resize-y focus:outline-none focus:border-[color:color-mix(in_srgb,var(--accent)_40%,transparent)]"
+                />
+                <p className="text-[11px] text-gray-500 mt-2 mb-3">{t('settings.proxiesHint')}</p>
+
+                {testProxy.data && (
+                  <div className={`text-xs mb-3 ${testProxy.data.ok ? 'text-sf-green' : 'text-red-400'}`}>
+                    {testProxy.data.ok ? `✓ IP: ${testProxy.data.ip}` : `✗ ${testProxy.data.error}`}
+                  </div>
+                )}
+                {pricingError && <div className="text-xs text-red-400 mb-3">{pricingError}</div>}
+
+                <div className="flex flex-wrap gap-3">
+                  <button
+                    onClick={handleSavePricing}
+                    disabled={savePricing.isPending}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl btn-accent font-semibold text-sm disabled:opacity-60"
+                  >
+                    {savePricing.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : savedFlash ? <Check className="w-4 h-4" /> : null}
+                    {savedFlash ? t('settings.saved') : t('settings.save')}
+                  </button>
+                  <button
+                    onClick={handleTest}
+                    disabled={testProxy.isPending || !newProxies.trim()}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
+                  >
+                    {testProxy.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {testProxy.isPending ? t('settings.testing') : t('settings.test')}
+                  </button>
+                  <button
+                    onClick={handleResetPricing}
+                    disabled={resetPricing.isPending}
+                    className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-400 hover:text-white disabled:opacity-50"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    {t('settings.reset')}
+                  </button>
+                </div>
+              </SettingsSection>
             </div>
-          )}
-          {pricingError && <div className="text-xs text-red-400 mb-3">{pricingError}</div>}
 
-          <div className="flex flex-wrap gap-3">
-            <button
-              onClick={handleSavePricing}
-              disabled={savePricing.isPending}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl btn-accent font-semibold text-sm disabled:opacity-60"
-            >
-              {savePricing.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : savedFlash ? <Check className="w-4 h-4" /> : null}
-              {savedFlash ? t('settings.saved') : t('settings.save')}
-            </button>
-            <button
-              onClick={handleTest}
-              disabled={testProxy.isPending || !newProxies.trim()}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
-            >
-              {testProxy.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {testProxy.isPending ? t('settings.testing') : t('settings.test')}
-            </button>
-            <button
-              onClick={handleResetPricing}
-              disabled={resetPricing.isPending}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-400 hover:text-white disabled:opacity-50"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              {t('settings.reset')}
-            </button>
+            {/* ── Automation ── */}
+            <div className="space-y-4">
+              <span className="nav-label block" id="automation">{t('settings.sectionAutomation')}</span>
+              <SettingsSection
+                id="auto-prices"
+                title={t('settings.autoPrices')}
+                description={t('settings.autoPricesDesc')}
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Both toggle and Save stay disabled until the real config
+                      loads, so the local defaults can never overwrite it. */}
+                  <PillButton active={schedEnabled} onClick={handleToggleSchedule} disabled={!schedule || saveSchedule.isPending}>
+                    {schedEnabled ? t('settings.autoPricesOn') : t('settings.autoPricesOff')}
+                  </PillButton>
+                  <input
+                    type="time"
+                    value={schedTime}
+                    onChange={(e) => setSchedTime(e.target.value)}
+                    disabled={!schedEnabled}
+                    aria-label={t('settings.autoPrices')}
+                    className="h-10 px-3 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-white font-mono focus:outline-none focus:border-[color:color-mix(in_srgb,var(--accent)_40%,transparent)] disabled:opacity-50 [color-scheme:dark]"
+                  />
+                  <button
+                    onClick={handleSaveSchedule}
+                    disabled={!schedule || saveSchedule.isPending}
+                    className="inline-flex items-center gap-2 px-5 py-2 rounded-xl btn-accent font-semibold text-sm disabled:opacity-60"
+                  >
+                    {saveSchedule.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    {t('settings.save')}
+                  </button>
+                  <button
+                    onClick={handleRunNow}
+                    disabled={runNow.isPending}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
+                  >
+                    <Play className="w-3.5 h-3.5" />
+                    {t('settings.runNow')}
+                  </button>
+                </div>
+              </SettingsSection>
+            </div>
+
+            {/* ── Data ── */}
+            <div className="space-y-4">
+              <span className="nav-label block" id="data">{t('settings.sectionData')}</span>
+              <SettingsSection
+                id="backup"
+                title={t('settings.backup')}
+                description={t('settings.backupDesc')}
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <PillButton active={backup?.enabled ?? false} onClick={handleToggleBackup} disabled={!backup || saveBackup.isPending}>
+                    {backup?.enabled ? t('settings.backupOn') : t('settings.backupOff')}
+                  </PillButton>
+                  <button
+                    onClick={handleRunBackup}
+                    disabled={runBackup.isPending}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
+                  >
+                    {runBackup.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    {t('settings.backupNow')}
+                  </button>
+                  <a
+                    href={api.settings.backupDownloadUrl()}
+                    download
+                    aria-disabled={!backup?.lastBackup}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white ${
+                      backup?.lastBackup ? '' : 'pointer-events-none opacity-50'
+                    }`}
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    {t('settings.backupDownload')}
+                  </a>
+                  <button
+                    onClick={() => setShowBackupList((v) => !v)}
+                    disabled={!backup?.lastBackup}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 border border-white/[0.08] text-sm text-gray-300 hover:text-white disabled:opacity-50"
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    {showBackupList ? t('settings.backupHide') : t('settings.backupList')}
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-3">
+                  {backup?.lastBackup
+                    ? `${t('settings.backupLast')}: ${formatDate(backup.lastBackup.when, locale)} · ${backup.count} ${t('settings.backupCount')}`
+                    : t('settings.backupNone')}
+                </p>
+                {showBackupList && backupList && backupList.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-1.5">
+                    {backupList.map((b) => (
+                      <div key={b.file} className="flex items-center gap-3 text-xs">
+                        <span className="font-mono text-gray-300">{formatDate(b.when, locale)}</span>
+                        <span className="font-mono text-gray-600">{(b.sizeBytes / 1024).toFixed(0)} KB</span>
+                        <span className="ml-auto flex items-center gap-1.5">
+                          <a
+                            href={api.settings.backupDownloadUrl(b.file)}
+                            download
+                            aria-label={`${t('settings.backupDownload')} — ${b.file}`}
+                            title={b.file}
+                            className="w-7 h-7 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-gray-400 hover:text-white"
+                          >
+                            <Download className="w-3 h-3" />
+                          </a>
+                          <button
+                            onClick={() => handleRestoreBackup(b.file)}
+                            disabled={restoreBackup.isPending}
+                            className="h-7 px-2.5 rounded-lg bg-white/[0.04] border border-white/[0.06] text-[11px] text-gray-400 hover:text-[color:var(--accent)] disabled:opacity-50"
+                          >
+                            {/* Spinner only on the row actually being restored */}
+                            {restoreBackup.isPending && restoreBackup.variables === b.file
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : t('settings.backupRestore')}
+                          </button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </SettingsSection>
+            </div>
           </div>
         </div>
       </div>

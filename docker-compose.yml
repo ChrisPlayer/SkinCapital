@@ -1,0 +1,19 @@
+services:
+  skincapital:
+    image: ghcr.io/chrisplayer/skincapital:latest
+    container_name: skincapital
+    ports:
+      - '3000:3000'
+    volumes:
+      - skincapital-data:/data
+    environment:
+      # Anti-CSRF: write requests are rejected when their Origin is not listed
+      # here. Add the URL you use to reach the app
+      # (e.g. http://192.168.1.10:3000 or https://skins.mydomain.com).
+      ALLOWED_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      # Behind an HTTPS reverse proxy, enable the secure cookie:
+      # COOKIE_SECURE: 'true'
+    restart: unless-stopped
+
+volumes:
+  skincapital-data:

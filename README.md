@@ -78,7 +78,7 @@ Without `SESSION_SECRET` in the `.env`, the server generates one on first start 
 | `SESSION_SECRET` | Signs the session cookie and encrypts stored proxies (AES-256-GCM) | auto-generated, persisted in `DATA_DIR` |
 | `DATA_DIR` | Data folder (SQLite DB, schema cache, secret) | `./data` |
 | `OPEN_BROWSER` | Opens the browser on startup (`1`/`true`): used by the Windows pack | off |
-| `ALLOWED_ORIGINS` | Browser origins allowed for CORS + CSRF (add your LAN host/IP) | `http://localhost:5173,...` |
+| `ALLOWED_ORIGINS` | Browser origins allowed for CORS + CSRF (add your LAN host/IP) | localhost and 127.0.0.1 on `PORT`, plus port 5173 |
 | `REFRESH_INTERVAL` | Inventory auto-refresh (minutes) | `10` |
 | `STEAM_PRICING_MODE` | `auto` / `proxy` / `direct`, also configurable from the Settings page | `auto` |
 | `STEAM_PROXIES` | Optional paid proxies (`host:port:user:pass` or `http://user:pass@host:port`), also configurable from the UI | - |
@@ -141,6 +141,7 @@ The script deploys `HEAD` (via `git archive`): commit before deploying. The cont
 - **Settings page**: price source, pricing mode (auto/proxy/direct), proxy management and language, straight from the UI, no `.env` editing
 - **Storage Units**: reads CS2 caskets through the Game Coordinator, included in the inventory and the dashboard
 - **Multi-profile**: track several Steam accounts, selectable from the home page
+- **Inventory priority**: items are saved before prices run in the background. Logging into another account pauses new price requests until its items are saved.
 - **History**: value evolution chart (7/30/90 days)
 - **Search & sort**: real-time, by price/name/float
 - **CSV export**: download the full inventory

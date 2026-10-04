@@ -50,7 +50,7 @@ export function AccountStatus({ steamId, steam, progress, compact = false }: Acc
       const { waitingForGC, loadedUnits, totalUnits } = steam.phaseDetail;
       if (waitingForGC) statusText = t('status.phase.waiting_gc');
       else if (totalUnits && totalUnits > 0) statusText += ` ${loadedUnits ?? 0}/${totalUnits}`;
-    } else if (progress && progress.total > 0) {
+    } else if (progress && progress.total > 0 && steam?.steamId === steamId) {
       statusText += ` ${progress.fetched}/${progress.total}`;
     }
   } else if (connected) {
@@ -92,7 +92,7 @@ export function AccountStatus({ steamId, steam, progress, compact = false }: Acc
 
   if (compact) {
     return (
-      <span title={`${personaName} — ${statusText}`} className="inline-flex items-center">
+      <span title={`${personaName} - ${statusText}`} className="inline-flex items-center">
         {avatar}
       </span>
     );

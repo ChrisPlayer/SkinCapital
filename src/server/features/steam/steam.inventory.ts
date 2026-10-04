@@ -250,33 +250,55 @@ export async function getMainInventory(): Promise<{ items: InsertItem[]; ok: boo
   }
 
   return new Promise<{ items: InsertItem[]; ok: boolean }>((resolve) => {
-    community.getUserInventoryContents(steamId, 730, 2, true, (err: Error | null, inventory: Array<{ market_hash_name: string; assetid: string; icon_url: string }>) => {
-      if (err) {
-        logger.error('[Inventory] Main inventory error:', err.message);
-        resolve({ items: [], ok: false });
-        return;
-      }
-
-      const items: InsertItem[] = inventory.map((item) => {
-        if (item.icon_url) {
-          iconCache.set(item.market_hash_name, item.icon_url);
+    let done = false;
+    const finish = (items: InsertItem[], ok: boolean) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timeout);
+      resolve({ items, ok });
+    };
+    const timeout = setTimeout(() => {
+      logger.warn('[Inventory] Main inventory timed out after 60 seconds');
+      finish([], false);
+    }, 60_000);
+    try {
+      community.getUserInventoryContents(steamId, 730, 2, true, (err: Error | null, inventory: Array<{ market_hash_name: string; assetid: string; icon_url: string }>) => {
+        if (done) return;
+        if (err) {
+          logger.error('[Inventory] Main inventory error:', err.message);
+          finish([], false);
+          return;
         }
-        return {
-          marketHashName: item.market_hash_name,
-          assetId: item.assetid,
-          casketId: null,
-          casketName: null,
-          floatValue: null,
-          paintSeed: null,
-          iconUrl: item.icon_url || null,
-          stickers: null,
-          schemaImage: null,
-        };
-      });
+        if (!Array.isArray(inventory) || inventory.some((item) => !item || typeof item.market_hash_name !== 'string')) {
+          logger.warn('[Inventory] Main inventory response was incomplete');
+          finish([], false);
+          return;
+        }
 
-      logger.info(`[Inventory] Main inventory: ${items.length} items (${iconCache.size} icons cached)`);
-      resolve({ items, ok: true });
-    });
+        const items: InsertItem[] = inventory.map((item) => {
+          if (item.icon_url) {
+            iconCache.set(item.market_hash_name, item.icon_url);
+          }
+          return {
+            marketHashName: item.market_hash_name,
+            assetId: item.assetid,
+            casketId: null,
+            casketName: null,
+            floatValue: null,
+            paintSeed: null,
+            iconUrl: item.icon_url || null,
+            stickers: null,
+            schemaImage: null,
+          };
+        });
+
+        logger.info(`[Inventory] Main inventory: ${items.length} items (${iconCache.size} icons cached)`);
+        finish(items, true);
+      });
+    } catch (err) {
+      logger.error('[Inventory] Main inventory request failed:', (err as Error).message);
+      finish([], false);
+    }
   });
 }
 

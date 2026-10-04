@@ -3,5 +3,6 @@
   "steam-user",
   "steamcommunity",
   "steam-session",
-  "globaloffensive"
+  "globaloffensive",
+  "node-cron"
 ]

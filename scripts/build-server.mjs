@@ -4,6 +4,7 @@
  * node_modules directory next to the bundle at runtime: better-sqlite3 ships a
  * native .node binary, and the Steam stack (steam-user & friends) reads .pem
  * and protobuf files relative to __dirname, which a bundle would break.
+ * node-cron also resolves its background-task daemon beside its module.
  */
 import { build } from 'esbuild';
 import { readFileSync } from 'fs';

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { steamClient } from '../steam/steam.client.ts';
-import { refresh, refreshPrices } from '../inventory/inventory.service.ts';
+import { refresh, isRefreshInProgress } from '../inventory/inventory.service.ts';
 import { authLimiter } from '../../middleware/security.ts';
 import { upsertProfile } from '../../db/queries/profiles.ts';
 import { pushEvent } from '../../lib/events.ts';
@@ -61,9 +61,6 @@ async function finalizeLogin(
   if (!alreadyFinalized) {
     logger.info('[Auth] Login successful');
     pushEvent('logged_in', { steamId, personaName: personaInfo?.personaName ?? null });
-    refreshPrices(steamId, 'steam', 'missing').catch((err) => {
-      logger.error('[Auth] Missing prices check error:', (err as Error).message);
-    });
     refresh(steamId).catch((err) => {
       logger.error('[Auth] Initial refresh error:', (err as Error).message);
     });
@@ -73,6 +70,9 @@ async function finalizeLogin(
 }
 
 router.post('/login', authLimiter, async (req, res) => {
+  if (isRefreshInProgress()) {
+    return res.status(409).json({ error: 'Inventory extraction in progress, try again when the items are saved' });
+  }
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: 'Username and password required' });

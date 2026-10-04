@@ -33,6 +33,9 @@ export function useEventToasts() {
       const tst = toastRef.current;
       switch (event.type) {
         case 'refresh_completed': {
+          for (const key of ['dashboard', 'profiles', 'overview', 'inventory-status']) {
+            queryClient.invalidateQueries({ queryKey: [key] });
+          }
           const count = event.payload.itemCount;
           tst.success(`${tr('toast.refreshDone')}${typeof count === 'number' ? ` (${count} items)` : ''}`);
           break;
@@ -41,6 +44,9 @@ export function useEventToasts() {
           tst.error(tr('toast.refreshError'));
           break;
         case 'price_refresh_completed': {
+          for (const key of ['dashboard', 'profiles', 'overview', 'inventory-status', 'price', 'price-compare', 'movers', 'trends']) {
+            queryClient.invalidateQueries({ queryKey: [key] });
+          }
           const found = event.payload.foundCount;
           tst.success(`${tr('toast.pricesRefreshDone')}${typeof found === 'number' ? ` (${found})` : ''}`);
           break;
@@ -62,6 +68,7 @@ export function useEventToasts() {
           break;
         }
         case 'phase_changed':
+          queryClient.invalidateQueries({ queryKey: ['inventory-status'] });
           // A refresh kicking off (manually, at login, or from the scheduler)
           // is worth one toast; the finer phases live in the account widget.
           if (event.payload.phase === 'fetching_inventory') {
@@ -74,9 +81,11 @@ export function useEventToasts() {
       }
     };
 
+    let timer: ReturnType<typeof setTimeout>;
+    const controller = new AbortController();
     const tick = async () => {
       try {
-        const res = await api.events.since(cursorRef.current);
+        const res = await api.events.since(cursorRef.current, controller.signal);
         if (stopped) return;
         if (bootIdRef.current !== res.bootId) {
           // First poll or server restart: position the cursor, replay nothing.
@@ -88,14 +97,16 @@ export function useEventToasts() {
         cursorRef.current = res.lastSeq;
       } catch {
         // Network hiccup: next tick retries with the same cursor.
+      } finally {
+        if (!stopped) timer = setTimeout(() => void tick(), POLL_MS);
       }
     };
 
     void tick();
-    const id = setInterval(() => void tick(), POLL_MS);
     return () => {
       stopped = true;
-      clearInterval(id);
+      clearTimeout(timer);
+      controller.abort();
     };
   }, [queryClient]);
 }

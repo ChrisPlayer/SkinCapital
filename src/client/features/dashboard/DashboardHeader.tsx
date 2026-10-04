@@ -65,17 +65,17 @@ export function DashboardHeader({
               <DollarSign className="w-4 h-4" />
               <span className="hidden lg:inline">{t('dashboard.refreshPrices')}</span>
             </PillButton>
-            {showRefreshInventory && (
-              <PillButton
-                onClick={onRefreshInventory}
-                disabled={refreshInventoryDisabled}
-                title={t('dashboard.refreshInventoryTooltip')}
-              >
-                {isOwner ? <RefreshCw className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
-                <span className="hidden lg:inline">{isOwner ? t('dashboard.refreshInventory') : t('auth.login')}</span>
-              </PillButton>
-            )}
           </>
+        )}
+        {showRefreshInventory && (
+          <PillButton
+            onClick={onRefreshInventory}
+            disabled={refreshInventoryDisabled}
+            title={t('dashboard.refreshInventoryTooltip')}
+          >
+            {isOwner ? <RefreshCw className="w-4 h-4" /> : <LogIn className="w-4 h-4" />}
+            <span className="hidden lg:inline">{isOwner ? t('dashboard.refreshInventory') : t('auth.login')}</span>
+          </PillButton>
         )}
         {showExport && (
           <a

@@ -27,7 +27,7 @@ try {
 Copy-Item (Join-Path $repo 'dist\server\server.cjs') (Join-Path $packRoot 'app\server.cjs')
 Copy-Item (Join-Path $repo 'dist\client') (Join-Path $packRoot 'app\public') -Recurse
 
-Write-Host '[2/5] Runtime dependencies (better-sqlite3 + Steam stack)...'
+Write-Host '[2/5] Runtime dependencies (SQLite, Steam, scheduler)...'
 node (Join-Path $repo 'scripts\gen-runtime-package.mjs') (Join-Path $packRoot 'app')
 Push-Location (Join-Path $packRoot 'app')
 try {

@@ -6,6 +6,7 @@ import {
   getLatestPricesForNames,
 } from '../../db/queries/prices.ts';
 import { getItemsByProfile } from '../../db/queries/items.ts';
+import { getProfileLastRefresh, updateProfileSummary, upsertProfile } from '../../db/queries/profiles.ts';
 import {
   takeCyclicWindow,
   groupItems,
@@ -43,6 +44,17 @@ beforeAll(() => {
 
 afterAll(() => {
   closeDb();
+});
+
+describe('inventory refresh timestamp', () => {
+  it('keeps the inventory timestamp when only a price summary changes', () => {
+    upsertProfile('timestamp-profile', 'Timestamp fixture');
+    getSqlite().prepare("UPDATE profiles SET last_refresh = '2020-01-01 00:00:00' WHERE steam_id = 'timestamp-profile'").run();
+    updateProfileSummary('timestamp-profile', 3, 12, false);
+    expect(getProfileLastRefresh('timestamp-profile')).toBe('2020-01-01 00:00:00');
+    updateProfileSummary('timestamp-profile', 4, 16);
+    expect(getProfileLastRefresh('timestamp-profile')).not.toBe('2020-01-01 00:00:00');
+  });
 });
 
 describe('takeCyclicWindow', () => {

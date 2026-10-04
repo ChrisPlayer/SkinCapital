@@ -5,7 +5,9 @@ import type { RequestHandler } from 'express';
 
 // Allowed browser origins (CORS + CSRF). Configurable so a LAN host/IP can be
 // added without editing code. Default = local dev/prod ports.
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || 'http://localhost:5173,http://localhost:3000')
+const localPort = process.env.PORT || '3000';
+const defaultOrigins = `http://localhost:5173,http://127.0.0.1:5173,http://localhost:${localPort},http://127.0.0.1:${localPort}`;
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || defaultOrigins)
   .split(',')
   .map((o) => o.trim())
   .filter(Boolean);

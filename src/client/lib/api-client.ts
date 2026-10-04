@@ -87,8 +87,8 @@ export const api = {
   },
 
   events: {
-    since: (seq: number | null) =>
-      request<EventsResponse>(`/events${seq !== null ? `?since=${seq}` : ''}`),
+    since: (seq: number | null, signal?: AbortSignal) =>
+      request<EventsResponse>(`/events${seq !== null ? `?since=${seq}` : ''}`, { signal }),
   },
 
   prices: {

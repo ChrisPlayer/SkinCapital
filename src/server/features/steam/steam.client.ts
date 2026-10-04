@@ -198,7 +198,7 @@ function login(username: string, password: string): Promise<LoginOutcome> {
     init();
     _loginInProgress = true;
     logger.info('[Steam] Attempting login...');
-    setPhase('logging_in', { owner: 'steam' });
+    setPhase('logging_in', { owner: 'steam', steamId: null });
 
     let settled = false;
     // 30s cap for the no-guard path (credentials → authenticated → token logon).

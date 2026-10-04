@@ -164,14 +164,16 @@ export function updateProfileSummary(
   steamId: string,
   itemCount: number,
   totalValue: number,
+  inventoryRefreshed = true,
 ): void {
   const sqlite = getSqlite();
   sqlite
     .prepare(
-      `UPDATE profiles SET item_count = ?, total_value = ?, last_refresh = datetime('now')
+      `UPDATE profiles SET item_count = ?, total_value = ?,
+       last_refresh = CASE WHEN ? THEN datetime('now') ELSE last_refresh END
        WHERE steam_id = ?`,
     )
-    .run(itemCount, totalValue, steamId);
+    .run(itemCount, totalValue, inventoryRefreshed ? 1 : 0, steamId);
 }
 
 /**

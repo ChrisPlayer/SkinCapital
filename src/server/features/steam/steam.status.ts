@@ -1,5 +1,6 @@
 import { pushEvent } from '../../lib/events.ts';
 import { logger } from '../../lib/logger.ts';
+import { setInventoryPriority } from '../pricing/pricing.priority.ts';
 import type { SteamPhase, SteamPhaseDetail } from '../../../shared/types/api.ts';
 
 /**
@@ -7,10 +8,8 @@ import type { SteamPhase, SteamPhaseDetail } from '../../../shared/types/api.ts'
  * Kept out of steam.client.ts / inventory.service.ts so both can import it
  * without a dependency cycle.
  *
- * Ownership rules (the tricky part): refresh() logs Steam out as soon as the
- * inventory extraction is done, while its price pass keeps running. The
- * resulting 'disconnected'/'logout' events (owner 'steam') must NOT reset the
- * phase to idle while the refresh pipeline still owns it.
+ * Inventory extraction owns its phase until persisted. Price scans have
+ * separate ownership and yield to a new login or inventory extraction.
  */
 export type PhaseOwner = 'steam' | 'refresh' | 'prices';
 
@@ -49,15 +48,18 @@ export function setPhase(phase: SteamPhase, opts: SetPhaseOptions = {}): void {
     return;
   }
 
-  const changed = state.phase !== phase;
+  const steamId = phase === 'idle' ? null : (opts.steamId !== undefined ? opts.steamId : state.steamId);
+  const changed = state.phase !== phase || state.steamId !== steamId;
   state = {
     phase,
     // idle is neutral ground: reset ownership so the next claimant can take it.
     owner: phase === 'idle' ? 'steam' : owner,
-    steamId: phase === 'idle' ? null : (opts.steamId !== undefined ? opts.steamId : state.steamId),
+    steamId,
     detail: opts.detail !== undefined ? opts.detail : (changed ? null : state.detail),
     since: changed ? new Date().toISOString() : state.since,
   };
+
+  setInventoryPriority(phase !== 'idle' && phase !== 'fetching_prices');
 
   if (changed) {
     logger.debug(`[Steam] Phase -> ${phase}${state.steamId ? ` (${state.steamId})` : ''}`);

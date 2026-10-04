@@ -44,12 +44,12 @@ export function MobileNav({
 
   return (
     <>
-      <div className="md:hidden flex items-center gap-3 mb-4 relative z-10">
+      <div className="md:hidden flex flex-wrap items-center gap-3 mb-4 relative z-10">
         <button onClick={() => navigate('/')} aria-label={t('settings.back')} className="w-9 h-9 rounded-lg bg-white/5 flex items-center justify-center"><ChevronLeft className="w-4 h-4" /></button>
         <div className="w-1 h-5 rounded-full bg-[color:var(--accent)]" />
         <span className="font-display font-bold text-lg">SkinCapital</span>
         {/* Compact icon-only actions (the desktop header is hidden on mobile) */}
-        <div className="flex md:hidden items-center gap-2 ml-auto">
+        <div className="flex md:hidden items-center justify-end gap-2 ml-auto max-[540px]:w-full">
           {accountStatus}
           <button
             onClick={onRefreshPrices}

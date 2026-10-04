@@ -421,7 +421,7 @@ export function DashboardPage() {
             onRefreshPrices={handleRefreshPrices}
             refreshPricesDisabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource || isRefreshing}
             onRefreshInventory={handleRefreshInventory}
-            refreshInventoryDisabled={refreshMutation.isPending || isRefreshing}
+            refreshInventoryDisabled={refreshMutation.isPending || syncType === 'inventory'}
             showRefreshInventory={!isAggregate}
           />
           {/* The price window only lives in the desktop header otherwise. */}
@@ -446,7 +446,7 @@ export function DashboardPage() {
             onRefreshPrices={handleRefreshPrices}
             refreshPricesDisabled={refreshPricesMutation.isPending || isPriceRefreshForCurrentSource}
             onRefreshInventory={handleRefreshInventory}
-            refreshInventoryDisabled={refreshMutation.isPending}
+            refreshInventoryDisabled={refreshMutation.isPending || syncType === 'inventory'}
             showRefreshInventory={!isAggregate}
             priceWindowLabel={data.priceWindow ? formatPriceWindow(data.priceWindow, locale) : null}
           />

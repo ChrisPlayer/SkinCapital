@@ -4,13 +4,13 @@ import { setPhase, getPhaseState } from '../steam/steam.status.ts';
 import { pushEvent } from '../../lib/events.ts';
 import { initialize as initSchema } from '../steam/steam.schema.ts';
 import {
-  getPrices,
   refreshPriceWithoutStaleFallback,
   getSteamWorkerPoolSnapshot,
   getSourceCooldownRemainingMs,
   type PriceFetchReason,
   type PriceSource,
 } from '../pricing/pricing.service.ts';
+import { waitForPriceWork } from '../pricing/pricing.priority.ts';
 import * as historyService from '../history/history.service.ts';
 import {
   replaceProfileItems,
@@ -47,7 +47,7 @@ export type PriceRefreshScope = 'all' | 'stale_or_missing' | 'missing';
 interface PriceRefreshTaskState {
   id: number;
   source: PriceSource;
-  cancelled: boolean;
+  controller: AbortController;
 }
 interface PriceRefreshProgressState {
   taskId: number;
@@ -69,7 +69,7 @@ const missingPriceChecksByProfileSource = new Map<string, Map<string, number>>()
 const noFreshPriceChecksByProfileSource = new Map<string, Map<string, number>>();
 const staleRefreshCursorByProfileSource = new Map<string, number>();
 let priceRefreshTaskCounter = 0;
-// Tracks progress of full inventory refresh (Steam inventory fetch + initial price pass)
+// Price progress is tracked separately from inventory extraction.
 let inventoryRefreshProgress: { fetched: number; total: number } | null = null;
 
 const STEAM_CDN = 'https://community.akamai.steamstatic.com/economy/image/';
@@ -255,30 +255,6 @@ export function takeCyclicWindow<T>(items: T[], size: number, start: number): { 
   };
 }
 
-async function runWithConcurrency<T>(
-  items: T[],
-  concurrency: number,
-  handler: (item: T, index: number) => Promise<void>,
-  shouldStop?: () => boolean,
-): Promise<void> {
-  if (items.length === 0) return;
-
-  const workerCount = Math.min(Math.max(1, concurrency), items.length);
-  let cursor = 0;
-  const runners = Array.from({ length: workerCount }, async () => {
-    while (true) {
-      if (shouldStop?.()) return;
-      const index = cursor++;
-      if (index >= items.length) {
-        return;
-      }
-      await handler(items[index], index);
-    }
-  });
-
-  await Promise.all(runners);
-}
-
 function getInventoryLastRefresh(steamId: string): Date | null {
   const inMemory = lastInventoryRefreshBySteamId.get(steamId);
   if (inMemory) return inMemory;
@@ -344,11 +320,23 @@ export function getActivePriceRefreshSource(steamId?: string): PriceSource | nul
 export function cancelPriceRefresh(steamId: string) {
   const task = activePriceRefreshes.get(steamId);
   if (!task) return false;
-  task.cancelled = true;
+  task.controller.abort();
   // Remove immediately so UI stops showing an active sync.
   activePriceRefreshes.delete(steamId);
   priceRefreshProgressBySteamId.delete(steamId);
+  updatePricePhase();
   return true;
+}
+
+function updatePricePhase() {
+  const phase = getPhaseState();
+  if (phase.phase !== 'idle' && phase.owner !== 'prices') return;
+  const next = activePriceRefreshes.keys().next();
+  if (next.done) {
+    if (phase.owner === 'prices') setPhase('idle', { owner: 'prices' });
+  } else {
+    setPhase('fetching_prices', { owner: 'prices', steamId: next.value });
+  }
 }
 
 export function getPriceRefreshProgress(steamId?: string) {
@@ -370,17 +358,20 @@ export async function refresh(steamId: string, force = false) {
   isRefreshing = true;
   currentRefreshSteamId = steamId;
   inventoryRefreshProgress = { fetched: 0, total: 0 };
-  setPhase('fetching_inventory', { owner: 'refresh', steamId });
   const startTime = Date.now();
+  let startPrices = false;
+  const ownsSteamSession = () =>
+    steamClient.isLoggedIn && steamClient.steamUser?.steamID?.getSteamID64() === steamId;
 
   try {
     logger.info(`[Inventory] Starting full refresh for ${steamId}...`);
+    if (!ownsSteamSession()) throw new Error('steam_session_changed');
+    setPhase('fetching_inventory', { owner: 'refresh', steamId });
 
     // The profile row is created at login; if it was deleted mid-session, a
     // refresh would silently re-insert items/history with no profile card
     // (orphans in the overview). Bail instead — logging in again recreates it.
     if (!profileExists(steamId)) {
-      steamClient.logout();
       logger.warn(`[Inventory] Refresh refused: profile ${steamId} no longer exists (deleted). Log in again to re-create it.`);
       recordRefreshOutcome(steamId, {
         success: false,
@@ -393,8 +384,10 @@ export async function refresh(steamId: string, force = false) {
     }
 
     await initSchema();
+    if (!ownsSteamSession()) throw new Error('steam_session_changed');
 
     const inventoryResult = await getAllInventory();
+    if (!ownsSteamSession()) throw new Error('steam_session_changed');
     const items = inventoryResult.items;
 
     // Anti-wipe guard: a transient Steam/GC error can return 0 items OR a
@@ -405,8 +398,7 @@ export async function refresh(steamId: string, force = false) {
     // Snapshot for the movements diff. First refresh of a profile is the
     // baseline: nothing to diff against, so nothing is recorded.
     const previousItems = previousCount > 0 ? getItemsByProfile(steamId) : null;
-    if (!force && previousCount > 0 && (items.length === 0 || !inventoryResult.mainOk)) {
-      steamClient.logout();
+    if (!force && (!inventoryResult.mainOk || (previousCount > 0 && items.length === 0))) {
       const detail =
         items.length === 0
           ? 'fetch returned 0 items'
@@ -453,43 +445,18 @@ export async function refresh(steamId: string, force = false) {
       recordInventoryDiff(steamId, previousItems, getItemsByProfile(steamId));
     }
 
-    // Disconnect Steam as soon as inventory extraction is done.
-    // Price fetching uses Steam Market HTTP and does not need an active Steam session.
-    // Phase set BEFORE the logout so the logout's own idle transition (owner
-    // 'steam') is rejected by the ownership guard instead of racing us.
-    setPhase('fetching_prices', { owner: 'refresh', steamId });
+    // Save the items and release Steam before starting independent price work.
+    setPhase('disconnecting', { owner: 'refresh', steamId });
     steamClient.logout();
     logger.info('[Inventory] Steam session disconnected after inventory extraction');
-
-    const uniqueNames = [...new Set(items.map((i) => i.marketHashName))];
-    inventoryRefreshProgress = { fetched: 0, total: uniqueNames.length };
-    logger.info(`[Inventory] Fetching prices for ${uniqueNames.length} unique items...`);
-
-    await runWithConcurrency(uniqueNames, PRICE_FETCH_CONCURRENCY, async (name) => {
-      try {
-        // Warms the price cache; the total is recomputed from it below.
-        await getPrices(name, false, 'steam');
-      } catch (err) {
-        logger.error(`[Inventory] Price fetch error for ${name}:`, (err as Error).message);
-      } finally {
-        if (inventoryRefreshProgress) {
-          inventoryRefreshProgress = {
-            fetched: inventoryRefreshProgress.fetched + 1,
-            total: inventoryRefreshProgress.total,
-          };
-        }
-      }
-    });
-
-    // Compute from the cache so the snapshot includes sticker values \u2014 the
-    // same basis as the dashboard total it will be compared against.
-    const totalValue = computeSourceTotal(getItemsByProfile(steamId), 'steam').totalValue;
+    const cachedTotal = computeSourceTotal(getItemsByProfile(steamId), 'steam');
+    const totalValue = cachedTotal.totalValue;
 
     const changeInfo = historyService.get24hChange(steamId, totalValue);
 
     if (isSuspiciousDrop(totalValue, changeInfo)) {
       logger.warn(`[History] SKIPPING SNAPSHOT: Calculated value \u20ac${totalValue.toFixed(2)} is suspiciously low compared to yesterday (\u20ac${changeInfo.yesterdayValue!.toFixed(2)}). Preserving history.`);
-    } else {
+    } else if (cachedTotal.pricedItems > 0) {
       historyService.saveSnapshot(steamId, totalValue, persistedCount);
     }
 
@@ -509,6 +476,7 @@ export async function refresh(steamId: string, force = false) {
       itemCount: persistedCount,
     });
     pushEvent('refresh_completed', { steamId, itemCount: persistedCount, totalValue });
+    startPrices = true;
     return { success: true, itemCount: persistedCount, totalValue, duration: parseFloat(duration) };
   } catch (err) {
     logger.error('[Inventory] Refresh failed:', err);
@@ -522,10 +490,21 @@ export async function refresh(steamId: string, force = false) {
     pushEvent('refresh_failed', { steamId, error: (err as Error).message });
     return { success: false, error: (err as Error).message };
   } finally {
+    if (ownsSteamSession()) steamClient.logout();
     isRefreshing = false;
     currentRefreshSteamId = null;
     inventoryRefreshProgress = null;
-    setPhase('idle', { owner: 'refresh' });
+    if (getPhaseState().owner === 'refresh' && getPhaseState().steamId === steamId) {
+      setPhase('idle', { owner: 'refresh' });
+    }
+    updatePricePhase();
+    if (startPrices) {
+      // Restart this profile's scan against the inventory that was just saved.
+      cancelPriceRefresh(steamId);
+      void refreshPrices(steamId, 'steam', 'stale_or_missing').catch((err) => {
+        logger.error('[Inventory] Background prices failed:', (err as Error).message);
+      });
+    }
   }
 }
 
@@ -779,7 +758,7 @@ function savePerProfileSnapshots(source: PriceSource, updateSummary: boolean) {
     }
     historyService.saveSnapshot(profile.steam_id, total.totalValue, items.length, source);
     if (updateSummary) {
-      updateProfileSummary(profile.steam_id, items.length, total.totalValue);
+      updateProfileSummary(profile.steam_id, items.length, total.totalValue, false);
     }
   }
 }
@@ -970,18 +949,17 @@ export async function refreshPrices(
       logger.info(`[Prices] ${source} refresh already in progress for ${steamId}, skipping`);
       return;
     }
-    existing.cancelled = true;
+    existing.controller.abort();
     logger.info(`[Prices] Cancelling ${existing.source} refresh for ${steamId} (switch to ${source})`);
   }
 
-  const task: PriceRefreshTaskState = { id: ++priceRefreshTaskCounter, source, cancelled: false };
+  const task: PriceRefreshTaskState = { id: ++priceRefreshTaskCounter, source, controller: new AbortController() };
   activePriceRefreshes.set(steamId, task);
-  // Claim the phase only when nothing else (login, full refresh) is running —
-  // the ownership guard makes this a no-op otherwise.
-  setPhase('fetching_prices', { owner: 'prices', steamId });
+  updatePricePhase();
   const aggregate = isAllProfiles(steamId);
 
   try {
+    if (!await waitForPriceWork(task.controller.signal)) return;
     const rawItems = aggregate ? getAllItems() : getItemsByProfile(steamId);
     if (rawItems.length === 0) {
       logger.info('[Prices] No items in DB for this profile, skipping price refresh');
@@ -1159,7 +1137,10 @@ export async function refreshPrices(
     ): Promise<{ status: 'success' | 'retry' | 'failed'; retryAfterMs?: number }> => {
       const maxAttempts = source === 'steam' ? PRICE_FETCH_RETRY_ATTEMPTS : 1;
       try {
+        if (!await waitForPriceWork(task.controller.signal)) return { status: 'failed' };
+        updatePricePhase();
         const refreshed = await refreshPriceWithoutStaleFallback(name, source);
+        if (task.controller.signal.aborted) return { status: 'failed' };
         if (refreshed.freshPrice !== null) {
           finalizeName(name, refreshed.freshPrice, attempt, refreshed.stalePrice, 'fresh');
           return { status: 'success' };
@@ -1184,6 +1165,7 @@ export async function refreshPrices(
         finalizeName(name, null, attempt, refreshed.stalePrice, refreshed.reason);
         return { status: 'failed' };
       } catch (err) {
+        if (task.controller.signal.aborted) return { status: 'failed' };
         logger.error(
           `[Prices] ${source} price fetch error for ${name} on ${workerLabel} (attempt ${attempt}/${maxAttempts}):`,
           (err as Error).message,
@@ -1250,7 +1232,7 @@ export async function refreshPrices(
         Array.from({ length: workerCount }, async (_, idx) => {
           const workerLabel = `worker-${idx + 1}`;
           while (true) {
-            if (task.cancelled) {
+            if (task.controller.signal.aborted) {
               return;
             }
 
@@ -1292,13 +1274,13 @@ export async function refreshPrices(
         }),
       );
 
-      if (task.cancelled) {
+      if (task.controller.signal.aborted) {
         logger.info(`[Prices] ${source} refresh cancelled for ${steamId}`);
         return;
       }
     } else {
       for (const name of namesToRefresh) {
-        if (task.cancelled) {
+        if (task.controller.signal.aborted) {
           logger.info(`[Prices] ${source} refresh cancelled for ${steamId}`);
           return;
         }
@@ -1316,6 +1298,8 @@ export async function refreshPrices(
       }
     }
 
+    if (task.controller.signal.aborted) return;
+
     if (scope === 'missing') {
       logger.info(
         `[Prices] ${source} missing scope summary: resolved ${resolvedNames}, unresolved ${unresolvedNames}, attempted ${namesToRefresh.length}.`,
@@ -1329,7 +1313,9 @@ export async function refreshPrices(
 
     // Recalculate total value for the selected source only (sticker values
     // included — same basis as the dashboard total the snapshot is compared to)
-    const recomputed = computeSourceTotal(rawItems, source);
+    // A different account may have refreshed items while this scan was paused.
+    const currentItems = aggregate ? getAllItems() : getItemsByProfile(steamId);
+    const recomputed = computeSourceTotal(currentItems, source);
     totalValue = recomputed.totalValue;
     pricedItems = recomputed.pricedItems;
 
@@ -1359,7 +1345,7 @@ export async function refreshPrices(
     if (isSuspiciousDrop(totalValue, changeInfo)) {
       logger.warn(`[Prices] SKIPPING ${source} SNAPSHOT: value too low compared to yesterday`);
     } else {
-      historyService.saveSnapshot(steamId, totalValue, rawItems.length, source);
+      historyService.saveSnapshot(steamId, totalValue, currentItems.length, source);
     }
 
     if (source !== 'steam') {
@@ -1370,7 +1356,7 @@ export async function refreshPrices(
     }
 
     // Profile summary (the profile-card total) stays steam-based.
-    updateProfileSummary(steamId, rawItems.length, totalValue);
+    updateProfileSummary(steamId, currentItems.length, totalValue, false);
     lastRefresh = new Date();
     logger.info(`[Prices] ${source} refresh complete (scope: ${scope}). Total: €${totalValue.toFixed(2)}`);
   } finally {
@@ -1384,9 +1370,6 @@ export async function refreshPrices(
       priceRefreshProgressBySteamId.delete(steamId);
     }
 
-    // Release the phase only if this price task actually owns it.
-    if (getPhaseState().owner === 'prices' && activePriceRefreshes.size === 0) {
-      setPhase('idle', { owner: 'prices' });
-    }
+    updatePricePhase();
   }
 }

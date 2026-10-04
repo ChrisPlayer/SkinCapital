@@ -39,7 +39,8 @@ export function useDashboardData(
     refetchInterval: isRefreshing ? 5000 : 60000,
     // Keep showing the previous days/source data while the new key loads, so
     // toggling 7/30/90 or the price source never flashes the full skeleton.
-    placeholderData: (prev) => prev,
+    placeholderData: (prev, previousQuery) =>
+      previousQuery?.queryKey[1] === steamId ? prev : undefined,
   });
 }
 

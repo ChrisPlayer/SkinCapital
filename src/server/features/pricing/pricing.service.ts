@@ -1,6 +1,7 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
 import https from 'node:https';
 import { csfloatQueue, steamQueue } from './pricing.queue.ts';
+import { runPriceRequest } from './pricing.priority.ts';
 import {
   acquireSteamProxyWorker,
   ensureSteamProxyPool,
@@ -52,6 +53,10 @@ interface SteamFetchResult {
 // sessions instead of paying a full handshake on every request.
 const keepAliveHttpsAgent = new https.Agent({ keepAlive: true });
 
+function pricingGet(url: string, config: AxiosRequestConfig) {
+  return runPriceRequest(() => axios.get(url, config));
+}
+
 // Explicit Accept-Encoding so compressed responses never depend on axios
 // defaults; on the heavy Steam render endpoint this is a 3-5x size difference.
 const STEAM_HEADERS = {
@@ -60,7 +65,6 @@ const STEAM_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 } as const;
 
-const inFlightSteamPrices = new Map<string, Promise<number | null>>();
 const inFlightSteamPriceResults = new Map<string, Promise<SteamFetchResult>>();
 const inFlightCsfloatPrices = new Map<string, Promise<number | null>>();
 
@@ -106,7 +110,7 @@ async function getSkinportMap(): Promise<Map<string, number>> {
   }
   skinportInFlight = (async () => {
     try {
-      const res = await axios.get('https://api.skinport.com/v1/items', {
+      const res = await pricingGet('https://api.skinport.com/v1/items', {
         params: { app_id: 730, currency: 'EUR' },
         timeout: 25000,
         httpsAgent: keepAliveHttpsAgent,
@@ -276,7 +280,7 @@ async function getSteamMarketPriceFromRender(
   worker: SteamProxyWorker,
 ): Promise<number | null> {
   const url = `https://steamcommunity.com/market/listings/730/${encodeURIComponent(marketHashName)}/render/`;
-  const response = await axios.get(url, {
+  const response = await pricingGet(url, {
     timeout: 15000,
     httpsAgent: getSteamProxyAgent(worker) ?? keepAliveHttpsAgent,
     proxy: false,
@@ -312,7 +316,7 @@ async function getSteamPriceDirectDetailed(marketHashName: string): Promise<Stea
     // 1) priceoverview
     try {
       const url = `https://steamcommunity.com/market/priceoverview/?appid=730&market_hash_name=${encodeURIComponent(marketHashName)}&currency=3`;
-      const response = await axios.get(url, {
+      const response = await pricingGet(url, {
         timeout: 15000,
         proxy: false,
         headers: STEAM_HEADERS,
@@ -341,7 +345,7 @@ async function getSteamPriceDirectDetailed(marketHashName: string): Promise<Stea
     // 2) listings render fallback
     try {
       const url = `https://steamcommunity.com/market/listings/730/${encodeURIComponent(marketHashName)}/render/`;
-      const response = await axios.get(url, {
+      const response = await pricingGet(url, {
         timeout: 15000,
         proxy: false,
         headers: STEAM_HEADERS,
@@ -407,7 +411,7 @@ async function getSteamMarketPriceDetailed(marketHashName: string): Promise<Stea
           overviewAttempted = true;
           const url = `https://steamcommunity.com/market/priceoverview/?appid=730&market_hash_name=${encodeURIComponent(marketHashName)}&currency=3`;
 
-          const response = await axios.get(url, {
+          const response = await pricingGet(url, {
             timeout: 15000,
             httpsAgent: getSteamProxyAgent(worker) ?? keepAliveHttpsAgent,
             proxy: false,
@@ -556,11 +560,6 @@ async function getSteamMarketPriceDetailed(marketHashName: string): Promise<Stea
   };
 }
 
-async function getSteamMarketPrice(marketHashName: string): Promise<number | null> {
-  const detailed = await getSteamMarketPriceDetailed(marketHashName);
-  return detailed.price;
-}
-
 const WEAR_PATTERN = /\((Factory New|Minimal Wear|Field-Tested|Well-Worn|Battle-Scarred)\)$/;
 
 function isCsfloatPriceable(marketHashName: string): boolean {
@@ -587,7 +586,7 @@ async function getCsfloatMarketPrice(marketHashName: string): Promise<number | n
       for (let i = 0; i < authHeaders.length; i++) {
         const authHeader = authHeaders[i];
         try {
-          const response = await axios.get('https://csfloat.com/api/v1/listings', {
+          const response = await pricingGet('https://csfloat.com/api/v1/listings', {
             timeout: CSFLOAT_TIMEOUT_MS,
             httpsAgent: keepAliveHttpsAgent,
             headers: {
@@ -672,18 +671,7 @@ async function getCsfloatMarketPrice(marketHashName: string): Promise<number | n
 }
 
 async function getSteamMarketPriceDedup(marketHashName: string): Promise<number | null> {
-  const existing = inFlightSteamPrices.get(marketHashName);
-  if (existing) {
-    return existing;
-  }
-
-  const request = getSteamMarketPrice(marketHashName)
-    .finally(() => {
-      inFlightSteamPrices.delete(marketHashName);
-    });
-
-  inFlightSteamPrices.set(marketHashName, request);
-  return request;
+  return (await getSteamMarketPriceDedupDetailed(marketHashName)).price;
 }
 
 async function getSteamMarketPriceDedupDetailed(marketHashName: string): Promise<SteamFetchResult> {
